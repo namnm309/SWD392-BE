@@ -11,6 +11,10 @@ Link Project Template
 
 https://docs.google.com/spreadsheets/d/1HufiK4_3U5h88D6NbMbsIxlhxmlGH3a6jE82tko8DNU/edit?gid=903370297#gid=903370297
 
+Link Swagger Deploy
+[https://github.com/namnm309/SWD392-BE
+](http://swd392group6.runasp.net/swagger/index.html)
+
 Link Edit Db 
 
 https://dbdiagram.io/d/SWD392-68cb85825779bb726501454a
