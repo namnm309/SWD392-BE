@@ -55,18 +55,14 @@ namespace ControllerLayer
                 c.AddSecurityRequirement(securityRequirement);
             });
 
-            // CORS cho frontend
+            // CORS cho frontend - cho phép tất cả origins
             builder.Services.AddCors(options =>
             {
-                options.AddPolicy("AllowFrontend", policy =>
+                options.AddPolicy("AllowAllOrigins", policy =>
                 {
-                    policy.WithOrigins(
-                        "http://localhost:3000",
-                        "https://localhost:3000"
-                    )
-                    .AllowAnyHeader()
-                    .AllowAnyMethod()
-                    .AllowCredentials();
+                    policy.AllowAnyOrigin()
+                          .AllowAnyHeader()
+                          .AllowAnyMethod();
                 });
             });
 
@@ -131,7 +127,7 @@ namespace ControllerLayer
 
             app.UseHttpsRedirection();
 
-            app.UseCors("AllowFrontend");
+            app.UseCors("AllowAllOrigins");
 
             app.UseAuthentication();
             app.UseAuthorization();
