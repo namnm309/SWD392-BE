@@ -1,0 +1,28 @@
+**/.env
+**/.env.*
+!**/env.sample
+!**/.env.example
+
+# IDE and build artifacts
+.vs/
+**/bin/
+**/obj/
+
+# User-specific/temporary
+*.user
+*.suo
+*.cache
+*.log
+
+# Visual Studio/MSBuild transient files for all projects in this solution
+**/*.AssemblyInfoInputs.cache
+**/*.assets.cache
+**/*.AssemblyReference.cache
+**/*.GeneratedMSBuildEditorConfig.editorconfig
+**/*.nuget.dgspec.json
+**/*.nuget.g.props
+**/*.nuget.g.targets
+**/project.assets.json
+**/project.nuget.cache
+**/*.dswa.cache.json
+**/obj/**/*.AssemblyInfo.cs
