@@ -6,11 +6,11 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace ControllerLayer.Controllers
 {
-    [ApiController]
-    [Route("api/users")]
     /// <summary>
     /// Quản lý người dùng (chỉ Admin)
     /// </summary>
+    [ApiController]
+    [Route("api/users")]
     //[Authorize(Roles = "Admin")]
     public class UsersController : ControllerBase
     {

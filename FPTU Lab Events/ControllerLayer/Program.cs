@@ -89,6 +89,12 @@ namespace ControllerLayer
             builder.Services.AddScoped<IJwtService, JwtService>();
             builder.Services.AddScoped<IAuthService, AuthService>();
             builder.Services.AddScoped<IUserService, UserService>();
+            
+            // New services for Tú's features
+            builder.Services.AddScoped<Application.Services.Notification.INotificationService, Application.Services.Notification.NotificationService>();
+            builder.Services.AddScoped<Application.Services.Report.IReportService, Application.Services.Report.ReportService>();
+            builder.Services.AddScoped<Application.Services.Room.IRoomService, Application.Services.Room.RoomService>();
+            builder.Services.AddScoped<Application.Services.Equipment.IEquipmentService, Application.Services.Equipment.EquipmentService>();
 
             // Load .env (optional)
             try { Env.Load(); } catch { }

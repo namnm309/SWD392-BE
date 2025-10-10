@@ -19,6 +19,18 @@ namespace InfrastructureLayer.Data
 
         public DbSet<UserSession> UserSessions { get; set; }
 
+        public DbSet<Notification> Notifications { get; set; }
+
+        public DbSet<NotificationRead> NotificationReads { get; set; }
+
+        public DbSet<Report> Reports { get; set; }
+
+        public DbSet<Room> Rooms { get; set; }
+
+        public DbSet<Equipment> Equipments { get; set; }
+
+        public DbSet<Booking> Bookings { get; set; }
+
         //Cấu hình mô hình dữ liệu (nếu cần) bằng cách override phương thức OnModelCreating
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -62,6 +74,78 @@ namespace InfrastructureLayer.Data
                 new Roles { Id = roleLecturerId, name = "Lecturer", description = "Lecturer", CreatedAt = seedTime, LastUpdatedAt = seedTime },
                 new Roles { Id = roleStudentId, name = "Student", description = "Student", CreatedAt = seedTime, LastUpdatedAt = seedTime }
             );
+
+            // Configure Notification relationships
+            modelBuilder.Entity<Notification>()
+                .HasOne(n => n.CreatedByUser)
+                .WithMany()
+                .HasForeignKey(n => n.CreatedBy)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<NotificationRead>()
+                .HasOne(nr => nr.Notification)
+                .WithMany(n => n.NotificationReads)
+                .HasForeignKey(nr => nr.NotificationId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<NotificationRead>()
+                .HasOne(nr => nr.User)
+                .WithMany()
+                .HasForeignKey(nr => nr.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // Configure Report relationships
+            modelBuilder.Entity<Report>()
+                .HasOne(r => r.Reporter)
+                .WithMany()
+                .HasForeignKey(r => r.ReporterId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<Report>()
+                .HasOne(r => r.ResolvedByUser)
+                .WithMany()
+                .HasForeignKey(r => r.ResolvedBy)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // Configure Room relationships
+            modelBuilder.Entity<Room>()
+                .HasMany(r => r.Equipments)
+                .WithOne(e => e.Room)
+                .HasForeignKey(e => e.RoomId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            modelBuilder.Entity<Room>()
+                .HasMany(r => r.Bookings)
+                .WithOne(b => b.Room)
+                .HasForeignKey(b => b.RoomId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // Configure Booking relationships
+            modelBuilder.Entity<Booking>()
+                .HasOne(b => b.User)
+                .WithMany()
+                .HasForeignKey(b => b.UserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // Configure indexes
+            modelBuilder.Entity<Notification>()
+                .HasIndex(n => new { n.TargetGroup, n.Status, n.StartDate, n.EndDate });
+
+            modelBuilder.Entity<Report>()
+                .HasIndex(r => new { r.Type, r.Status, r.ReportedDate });
+
+            modelBuilder.Entity<Room>()
+                .HasIndex(r => new { r.Name, r.Location, r.Status });
+
+            modelBuilder.Entity<Equipment>()
+                .HasIndex(e => e.SerialNumber)
+                .IsUnique();
+
+            modelBuilder.Entity<Equipment>()
+                .HasIndex(e => new { e.Type, e.Status, e.RoomId });
+
+            modelBuilder.Entity<Booking>()
+                .HasIndex(b => new { b.RoomId, b.StartTime, b.EndTime, b.Status });
         }
 
     }
