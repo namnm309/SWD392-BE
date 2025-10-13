@@ -17,6 +17,11 @@ namespace DomainLayer.Entities
         [ForeignKey(nameof(RoomId))]
         public Room Room { get; set; } = null!;
         
+        public Guid? EventId { get; set; }
+
+        [ForeignKey(nameof(EventId))]
+        public Event? Event { get; set; }
+
         public DateTime StartTime { get; set; }
         
         public DateTime EndTime { get; set; }

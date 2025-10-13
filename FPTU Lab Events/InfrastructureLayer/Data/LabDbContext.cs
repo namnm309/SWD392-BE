@@ -31,6 +31,16 @@ namespace InfrastructureLayer.Data
 
         public DbSet<Booking> Bookings { get; set; }
 
+        public DbSet<Lab> Labs { get; set; }
+
+        public DbSet<LabMember> LabMembers { get; set; }
+
+        public DbSet<Event> Events { get; set; }
+
+        public DbSet<RoomSlot> RoomSlots { get; set; }
+
+        public DbSet<BookingApply> BookingApplies { get; set; }
+
         //Cấu hình mô hình dữ liệu (nếu cần) bằng cách override phương thức OnModelCreating
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -126,6 +136,41 @@ namespace InfrastructureLayer.Data
                 .WithMany()
                 .HasForeignKey(b => b.UserId)
                 .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<Booking>()
+                .HasOne(b => b.Event)
+                .WithMany(e => e.Bookings)
+                .HasForeignKey(b => b.EventId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            // Lab & LabMember
+            modelBuilder.Entity<LabMember>()
+                .HasIndex(lm => new { lm.LabId, lm.UserId })
+                .IsUnique();
+
+            modelBuilder.Entity<Lab>()
+                .HasMany(l => l.Members)
+                .WithOne(m => m.Lab)
+                .HasForeignKey(m => m.LabId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // RoomSlot
+            modelBuilder.Entity<RoomSlot>()
+                .HasIndex(rs => new { rs.RoomId, rs.DayOfWeek, rs.StartTime })
+                .IsUnique();
+
+            // BookingApply
+            modelBuilder.Entity<BookingApply>()
+                .HasOne(ba => ba.Booking)
+                .WithMany()
+                .HasForeignKey(ba => ba.BookingId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<BookingApply>()
+                .HasOne(ba => ba.RoomSlot)
+                .WithMany()
+                .HasForeignKey(ba => ba.RoomSlotId)
+                .OnDelete(DeleteBehavior.SetNull);
 
             // Configure indexes
             modelBuilder.Entity<Notification>()

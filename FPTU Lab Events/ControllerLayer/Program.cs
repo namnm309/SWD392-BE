@@ -89,6 +89,8 @@ namespace ControllerLayer
             builder.Services.AddScoped<IJwtService, JwtService>();
             builder.Services.AddScoped<IAuthService, AuthService>();
             builder.Services.AddScoped<IUserService, UserService>();
+            builder.Services.AddScoped<Application.Services.Booking.IBookingService, Application.Services.Booking.BookingService>();
+            builder.Services.AddScoped<Application.Services.User.ILabMemberService, Application.Services.User.LabMemberService>();
             
             // New services for Tú's features
             builder.Services.AddScoped<Application.Services.Notification.INotificationService, Application.Services.Notification.NotificationService>();
