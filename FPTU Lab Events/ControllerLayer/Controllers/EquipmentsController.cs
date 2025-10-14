@@ -10,6 +10,9 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace ControllerLayer.Controllers
 {
+    /// <summary>
+    /// Tú
+    /// </summary>
     [ApiController]
     [Route("api/equipments")]
     [Authorize]

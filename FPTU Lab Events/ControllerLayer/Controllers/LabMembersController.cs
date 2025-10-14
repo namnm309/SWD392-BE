@@ -5,7 +5,10 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace ControllerLayer.Controllers
 {
-	[ApiController]
+    /// <summary>
+    /// Nam
+    /// </summary>
+    [ApiController]
 	[Route("api/labs/{labId:guid}/members")]
 	/// <summary>
 	/// Quản lý thành viên của Lab: liệt kê, thêm, cập nhật, xóa.

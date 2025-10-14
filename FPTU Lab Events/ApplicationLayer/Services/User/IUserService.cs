@@ -11,6 +11,7 @@ public interface IUserService
   Task<UserDetail> UpdateAsync(Guid id, UpdateUserRequest request);
   Task DeleteAsync(Guid id);
   Task<UserDetail> UpdateStatusAsync(Guid id, UpdateStatusRequest request);
+  Task<UserDetail> UpdateRolesAsync(Guid id, UpdateUserRolesRequest request);
 }
 
 

@@ -5,7 +5,10 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace ControllerLayer.Controllers
 {
-	[ApiController]
+    /// <summary>
+    /// Nam
+    /// </summary>
+    [ApiController]
 	[Route("api/[controller]")]
 	/// <summary>
 	/// Quản lý đặt lịch phòng: tạo, xem, cập nhật trạng thái và xóa booking.
