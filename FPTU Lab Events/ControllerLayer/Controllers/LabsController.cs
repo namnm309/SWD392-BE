@@ -11,7 +11,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace ControllerLayer.Controllers
 {
     /// <summary>
-    /// Lab Management Controller
+    /// Hiền 
     /// </summary>
     [ApiController]
     [Route("api/labs")]
