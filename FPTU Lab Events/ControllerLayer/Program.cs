@@ -101,6 +101,8 @@ namespace ControllerLayer
             builder.Services.AddScoped<Application.Services.Report.IReportService, Application.Services.Report.ReportService>();
             builder.Services.AddScoped<Application.Services.Room.IRoomService, Application.Services.Room.RoomService>();
             builder.Services.AddScoped<Application.Services.Equipment.IEquipmentService, Application.Services.Equipment.EquipmentService>();
+            builder.Services.AddScoped<Application.Services.Lab.ILabService, Application.Services.Lab.LabService>();
+            builder.Services.AddScoped<Application.Services.Event.IEventService, Application.Services.Event.EventService>();
             builder.Services.AddScoped<IRoleService, RoleService>();
 
             // Load .env (optional)

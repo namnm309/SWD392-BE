@@ -154,6 +154,20 @@ namespace InfrastructureLayer.Data
                 .HasForeignKey(m => m.LabId)
                 .OnDelete(DeleteBehavior.Cascade);
 
+            // Lab & Room
+            modelBuilder.Entity<Lab>()
+                .HasOne(l => l.Room)
+                .WithMany()
+                .HasForeignKey(l => l.RoomId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            // Event & User (CreatedBy)
+            modelBuilder.Entity<Event>()
+                .HasOne(e => e.CreatedByUser)
+                .WithMany()
+                .HasForeignKey(e => e.CreatedBy)
+                .OnDelete(DeleteBehavior.Restrict);
+
             // RoomSlot
             modelBuilder.Entity<RoomSlot>()
                 .HasIndex(rs => new { rs.RoomId, rs.DayOfWeek, rs.StartTime })
