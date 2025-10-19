@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace ControllerLayer.Controllers
 {
     /// <summary>
-    /// Nam
+    /// Hiền
     /// </summary>
     [ApiController]
 	[Route("api/labs/{labId:guid}/members")]

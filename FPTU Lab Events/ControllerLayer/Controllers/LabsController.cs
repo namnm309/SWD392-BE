@@ -27,11 +27,6 @@ namespace ControllerLayer.Controllers
 
         /// <summary>
         /// Lấy tất cả lab (View Lab API)
-        /// AC-01: System must display list of all labs with details
-        /// AC-02: Each lab must show: Lab ID, Name, Location, Capacity, Available Equipment, Status (Active/Inactive)
-        /// AC-03: User can filter labs by location or capacity
-        /// AC-04: User can view detailed information of each lab
-        /// AC-05: Display message "No labs available" if list is empty
         /// </summary>
         [HttpGet]
         public async Task<IActionResult> GetAllLabs([FromQuery] LabFilterRequest? filter)
@@ -55,7 +50,6 @@ namespace ControllerLayer.Controllers
 
         /// <summary>
         /// Lấy lab theo ID (View Lab Detail)
-        /// AC-04: User can view detailed information of each lab
         /// </summary>
         [HttpGet("{id}")]
         public async Task<IActionResult> GetLabById(Guid id)
@@ -147,11 +141,6 @@ namespace ControllerLayer.Controllers
 
         /// <summary>
         /// Tạo lab mới (Admin only)
-        /// AC-01: System must display fields: Lab Name, Description, Location, Capacity, Room, Status
-        /// AC-02: Required fields (Lab Name, Capacity, Room) cannot be null
-        /// AC-03: Upon successful submission, save lab to database
-        /// AC-04: Display message: "Create lab successfully"
-        /// AC-05: Log creation event with admin ID, timestamp, and lab ID
         /// </summary>
         [HttpPost]
         [Authorize(Roles = "Admin")]
@@ -175,11 +164,6 @@ namespace ControllerLayer.Controllers
 
         /// <summary>
         /// Cập nhật lab (Admin only)
-        /// AC-01: System must display editable fields: Lab Name, Description, Location, Capacity, Status
-        /// AC-02: Required fields cannot be null
-        /// AC-03: Upon valid submission, update lab information
-        /// AC-04: Display message: "Update lab successfully"
-        /// AC-05: Log edit event with admin ID, lab ID, timestamp, and changes
         /// </summary>
         [HttpPut("{id}")]
         [Authorize(Roles = "Admin")]
@@ -221,12 +205,6 @@ namespace ControllerLayer.Controllers
 
         /// <summary>
         /// Xóa lab (Admin only)
-        /// AC-01: System must check if lab has pending or approved bookings
-        /// AC-02: If bookings exist, display warning: "Cannot delete lab with active bookings"
-        /// AC-03: Admin must confirm deletion before removing
-        /// AC-04: Upon confirmation, delete lab from system
-        /// AC-05: Display message: "Delete lab successfully"
-        /// AC-06: Log deletion event with admin ID, lab ID, and timestamp
         /// </summary>
         [HttpDelete("{id}")]
         [Authorize(Roles = "Admin")]
