@@ -34,12 +34,6 @@ namespace ControllerLayer.Controllers
             try
             {
                 var labs = await _labService.GetAllLabsAsync(filter);
-                
-                if (labs.Count == 0)
-                {
-                    return SuccessResp.Ok(new { Message = "No labs available", Labs = labs });
-                }
-                
                 return SuccessResp.Ok(labs);
             }
             catch (Exception ex)
@@ -74,12 +68,6 @@ namespace ControllerLayer.Controllers
             try
             {
                 var labs = await _labService.GetAvailableLabsAsync();
-                
-                if (labs.Count == 0)
-                {
-                    return SuccessResp.Ok(new { Message = "No labs available", Labs = labs });
-                }
-                
                 return SuccessResp.Ok(labs);
             }
             catch (Exception ex)
@@ -154,7 +142,7 @@ namespace ControllerLayer.Controllers
                     return ErrorResp.Unauthorized("Invalid admin ID");
 
                 var lab = await _labService.CreateLabAsync(request, adminId);
-                return SuccessResp.Created(new { Message = "Create lab successfully", Lab = lab });
+                return SuccessResp.Created(lab);
             }
             catch (Exception ex)
             {
@@ -177,7 +165,7 @@ namespace ControllerLayer.Controllers
                     return ErrorResp.Unauthorized("Invalid admin ID");
 
                 var lab = await _labService.UpdateLabAsync(id, request, adminId);
-                return SuccessResp.Ok(new { Message = "Update lab successfully", Lab = lab });
+                return SuccessResp.Ok(lab);
             }
             catch (Exception ex)
             {
@@ -218,7 +206,7 @@ namespace ControllerLayer.Controllers
                     return ErrorResp.Unauthorized("Invalid admin ID");
 
                 await _labService.DeleteLabAsync(id, request, adminId);
-                return SuccessResp.Ok(new { Message = "Delete lab successfully" });
+                return SuccessResp.NoContent();
             }
             catch (Exception ex)
             {

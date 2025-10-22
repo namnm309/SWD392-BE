@@ -34,12 +34,6 @@ namespace ControllerLayer.Controllers
             try
             {
                 var events = await _eventService.GetAllEventsAsync(filter);
-                
-                if (events.Count == 0)
-                {
-                    return SuccessResp.Ok(new { Message = "No events found", Events = events });
-                }
-                
                 return SuccessResp.Ok(events);
             }
             catch (Exception ex)
@@ -74,12 +68,6 @@ namespace ControllerLayer.Controllers
             try
             {
                 var events = await _eventService.GetUpcomingEventsAsync();
-                
-                if (events.Count == 0)
-                {
-                    return SuccessResp.Ok(new { Message = "No upcoming events found", Events = events });
-                }
-                
                 return SuccessResp.Ok(events);
             }
             catch (Exception ex)
@@ -97,12 +85,6 @@ namespace ControllerLayer.Controllers
             try
             {
                 var events = await _eventService.GetEventsByDateRangeAsync(startDate, endDate);
-                
-                if (events.Count == 0)
-                {
-                    return SuccessResp.Ok(new { Message = "No events found in this date range", Events = events });
-                }
-                
                 return SuccessResp.Ok(events);
             }
             catch (Exception ex)
@@ -160,7 +142,7 @@ namespace ControllerLayer.Controllers
                     return ErrorResp.Unauthorized("Invalid admin ID");
 
                 var eventDetail = await _eventService.CreateEventAsync(request, adminId);
-                return SuccessResp.Created(new { Message = "Create event successfully", Event = eventDetail });
+                return SuccessResp.Created(eventDetail);
             }
             catch (Exception ex)
             {
@@ -183,7 +165,7 @@ namespace ControllerLayer.Controllers
                     return ErrorResp.Unauthorized("Invalid admin ID");
 
                 var eventDetail = await _eventService.UpdateEventAsync(id, request, adminId);
-                return SuccessResp.Ok(new { Message = "Update event successfully", Event = eventDetail });
+                return SuccessResp.Ok(eventDetail);
             }
             catch (Exception ex)
             {
@@ -206,7 +188,7 @@ namespace ControllerLayer.Controllers
                     return ErrorResp.Unauthorized("Invalid admin ID");
 
                 await _eventService.DeleteEventAsync(id, request, adminId);
-                return SuccessResp.Ok(new { Message = "Delete event successfully" });
+                return SuccessResp.NoContent();
             }
             catch (Exception ex)
             {
