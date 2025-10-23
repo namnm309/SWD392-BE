@@ -5,8 +5,10 @@ using System.Threading.Tasks;
 using Application.DTOs.Event;
 using Application.ResponseCode;
 using Application.Services.Event;
+using InfrastructureLayer.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace ControllerLayer.Controllers
 {
@@ -136,16 +138,23 @@ namespace ControllerLayer.Controllers
         {
             try
             {
-                // Get admin ID from JWT token
-                var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
-                if (string.IsNullOrEmpty(userIdStr) || !Guid.TryParse(userIdStr, out var adminId))
-                    return ErrorResp.Unauthorized("Invalid admin ID");
-
+                Console.WriteLine($"=== DEBUG: CreateEvent Request ===");
+                Console.WriteLine($"Title: {request.Title}");
+                Console.WriteLine($"StartDate: {request.StartDate}");
+                Console.WriteLine($"EndDate: {request.EndDate}");
+                Console.WriteLine($"Location: {request.Location}");
+                
+                var adminId = GetCurrentUserId();
+                Console.WriteLine($"Admin ID: {adminId}");
+                
                 var eventDetail = await _eventService.CreateEventAsync(request, adminId);
                 return SuccessResp.Created(eventDetail);
             }
             catch (Exception ex)
             {
+                Console.WriteLine($"=== ERROR: CreateEvent ===");
+                Console.WriteLine($"Error: {ex.Message}");
+                Console.WriteLine($"StackTrace: {ex.StackTrace}");
                 return ErrorResp.BadRequest(ex.Message);
             }
         }
@@ -159,11 +168,7 @@ namespace ControllerLayer.Controllers
         {
             try
             {
-                // Get admin ID from JWT token
-                var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
-                if (string.IsNullOrEmpty(userIdStr) || !Guid.TryParse(userIdStr, out var adminId))
-                    return ErrorResp.Unauthorized("Invalid admin ID");
-
+                var adminId = GetCurrentUserId();
                 var eventDetail = await _eventService.UpdateEventAsync(id, request, adminId);
                 return SuccessResp.Ok(eventDetail);
             }
@@ -182,18 +187,44 @@ namespace ControllerLayer.Controllers
         {
             try
             {
-                // Get admin ID from JWT token
-                var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
-                if (string.IsNullOrEmpty(userIdStr) || !Guid.TryParse(userIdStr, out var adminId))
-                    return ErrorResp.Unauthorized("Invalid admin ID");
-
+                var adminId = GetCurrentUserId();
                 await _eventService.DeleteEventAsync(id, request, adminId);
-                return SuccessResp.NoContent();
+                return NoContent();
             }
             catch (Exception ex)
             {
                 return ErrorResp.BadRequest(ex.Message);
             }
+        }
+
+        private Guid GetCurrentUserId()
+        {
+            // Try different ways to get session ID
+            var sessionIdStr = User.FindFirst("sessionID")?.Value ?? 
+                              User.FindFirst("sessionId")?.Value ?? 
+                              User.FindFirst("SessionID")?.Value ?? 
+                              User.FindFirst("SessionId")?.Value;
+            
+            if (string.IsNullOrEmpty(sessionIdStr))
+            {
+                throw new Exception("Session ID not found in token");
+            }
+            
+            // Get user ID from session
+            using var scope = HttpContext.RequestServices.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<LabDbContext>();
+            
+            var session = db.UserSessions
+                .Include(s => s.User)
+                .ThenInclude(u => u.Roles)
+                .FirstOrDefault(s => s.Id == Guid.Parse(sessionIdStr) && s.RevokedAt == null);
+                
+            if (session == null)
+            {
+                throw new Exception("Session not found or expired");
+            }
+            
+            return session.User.Id;
         }
     }
 }

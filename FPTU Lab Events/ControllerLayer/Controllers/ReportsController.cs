@@ -164,7 +164,7 @@ namespace ControllerLayer.Controllers
             {
                 var userId = GetCurrentUserId();
                 await _reportService.DeleteReportAsync(id, userId);
-                return SuccessResp.NoContent();
+                return NoContent(); // Return 204 No Content directly
             }
             catch (Exception ex)
             {

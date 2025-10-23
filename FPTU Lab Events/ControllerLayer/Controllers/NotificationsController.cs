@@ -112,7 +112,7 @@ namespace ControllerLayer.Controllers
             {
                 var adminId = GetCurrentUserId();
                 await _notificationService.DeleteNotificationAsync(id, adminId);
-                return SuccessResp.NoContent();
+                return NoContent(); // Return 204 No Content directly
             }
             catch (Exception ex)
             {

@@ -150,15 +150,25 @@ namespace Application.Services.Event
                 LastUpdatedAt = DateTime.UtcNow
             };
 
-            _db.Events.Add(eventEntity);
-            await _db.SaveChangesAsync();
+            try
+            {
+                _db.Events.Add(eventEntity);
+                await _db.SaveChangesAsync();
+                Console.WriteLine($"Event created successfully with ID: {eventEntity.Id}");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Database error: {ex.Message}");
+                Console.WriteLine($"Inner exception: {ex.InnerException?.Message}");
+                throw new Exception($"Failed to save event: {ex.InnerException?.Message ?? ex.Message}");
+            }
 
-            // AC-04: Send notification to all users
-            await SendEventNotificationAsync(eventEntity.Id, "New Event Created", 
-                $"A new event '{eventEntity.Title}' has been created.");
+            // AC-04: Send notification to all users (temporarily disabled for debugging)
+            // await SendEventNotificationAsync(eventEntity.Id, "New Event Created", 
+            //     $"A new event '{eventEntity.Title}' has been created.");
 
-            // Log creation event - AC-06
-            await LogEventActionAsync(adminId, eventEntity.Id, eventEntity.Title, "Create", null);
+            // Log creation event - AC-06 (temporarily disabled for debugging)
+            // await LogEventActionAsync(adminId, eventEntity.Id, eventEntity.Title, "Create", null);
 
             return await GetEventByIdAsync(eventEntity.Id);
         }
