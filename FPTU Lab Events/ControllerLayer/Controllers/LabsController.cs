@@ -5,8 +5,10 @@ using System.Threading.Tasks;
 using Application.DTOs.Lab;
 using Application.ResponseCode;
 using Application.Services.Lab;
+using InfrastructureLayer.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace ControllerLayer.Controllers
 {
@@ -136,11 +138,7 @@ namespace ControllerLayer.Controllers
         {
             try
             {
-                // Get admin ID from JWT token
-                var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
-                if (string.IsNullOrEmpty(userIdStr) || !Guid.TryParse(userIdStr, out var adminId))
-                    return ErrorResp.Unauthorized("Invalid admin ID");
-
+                var adminId = GetCurrentUserId();
                 var lab = await _labService.CreateLabAsync(request, adminId);
                 return SuccessResp.Created(lab);
             }
@@ -159,11 +157,7 @@ namespace ControllerLayer.Controllers
         {
             try
             {
-                // Get admin ID from JWT token
-                var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
-                if (string.IsNullOrEmpty(userIdStr) || !Guid.TryParse(userIdStr, out var adminId))
-                    return ErrorResp.Unauthorized("Invalid admin ID");
-
+                var adminId = GetCurrentUserId();
                 var lab = await _labService.UpdateLabAsync(id, request, adminId);
                 return SuccessResp.Ok(lab);
             }
@@ -200,18 +194,44 @@ namespace ControllerLayer.Controllers
         {
             try
             {
-                // Get admin ID from JWT token
-                var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
-                if (string.IsNullOrEmpty(userIdStr) || !Guid.TryParse(userIdStr, out var adminId))
-                    return ErrorResp.Unauthorized("Invalid admin ID");
-
+                var adminId = GetCurrentUserId();
                 await _labService.DeleteLabAsync(id, request, adminId);
-                return SuccessResp.NoContent();
+                return NoContent();
             }
             catch (Exception ex)
             {
                 return ErrorResp.BadRequest(ex.Message);
             }
+        }
+
+        private Guid GetCurrentUserId()
+        {
+            // Try different ways to get session ID
+            var sessionIdStr = User.FindFirst("sessionID")?.Value ?? 
+                              User.FindFirst("sessionId")?.Value ?? 
+                              User.FindFirst("SessionID")?.Value ?? 
+                              User.FindFirst("SessionId")?.Value;
+            
+            if (string.IsNullOrEmpty(sessionIdStr))
+            {
+                throw new Exception("Session ID not found in token");
+            }
+            
+            // Get user ID from session
+            using var scope = HttpContext.RequestServices.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<LabDbContext>();
+            
+            var session = db.UserSessions
+                .Include(s => s.User)
+                .ThenInclude(u => u.Roles)
+                .FirstOrDefault(s => s.Id == Guid.Parse(sessionIdStr) && s.RevokedAt == null);
+                
+            if (session == null)
+            {
+                throw new Exception("Session not found or expired");
+            }
+            
+            return session.User.Id;
         }
     }
 }
