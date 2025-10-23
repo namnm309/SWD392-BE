@@ -37,4 +37,9 @@ public class UpdateStatusRequest
   public string Status { get; set; } = null!; // Active/Inactive/Locked
 }
 
+public class UpdateUserRolesRequest
+{
+  public string[] Roles { get; set; } = Array.Empty<string>();
+}
+
 

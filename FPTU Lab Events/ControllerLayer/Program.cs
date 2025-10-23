@@ -9,6 +9,10 @@ using Application.Services.Auth;
 using DotNetEnv;
 using Application.Services.User;
 using InfrastructureLayer.Core.Mail;
+using Application.Services.Role;
+using DomainLayer.Entities;
+using DomainLayer.Enum;
+using System.IdentityModel.Tokens.Jwt;
 
 namespace ControllerLayer
 {
@@ -89,17 +93,24 @@ namespace ControllerLayer
             builder.Services.AddScoped<IJwtService, JwtService>();
             builder.Services.AddScoped<IAuthService, AuthService>();
             builder.Services.AddScoped<IUserService, UserService>();
+            builder.Services.AddScoped<Application.Services.Booking.IBookingService, Application.Services.Booking.BookingService>();
+            builder.Services.AddScoped<Application.Services.User.ILabMemberService, Application.Services.User.LabMemberService>();
             
             // New services for Tú's features
             builder.Services.AddScoped<Application.Services.Notification.INotificationService, Application.Services.Notification.NotificationService>();
             builder.Services.AddScoped<Application.Services.Report.IReportService, Application.Services.Report.ReportService>();
             builder.Services.AddScoped<Application.Services.Room.IRoomService, Application.Services.Room.RoomService>();
             builder.Services.AddScoped<Application.Services.Equipment.IEquipmentService, Application.Services.Equipment.EquipmentService>();
+            builder.Services.AddScoped<Application.Services.Lab.ILabService, Application.Services.Lab.LabService>();
+            builder.Services.AddScoped<Application.Services.Event.IEventService, Application.Services.Event.EventService>();
+            builder.Services.AddScoped<IRoleService, RoleService>();
 
             // Load .env (optional)
             try { Env.Load(); } catch { }
 
             // Authentication - JWT Bearer
+            // Keep original claim types from token (do not remap to WS-* URIs)
+            JwtSecurityTokenHandler.DefaultMapInboundClaims = false;
             var jwtSecret = Environment.GetEnvironmentVariable("JWT_SECRET")
                              ?? builder.Configuration["Jwt:Secret"]
                              ?? "0ebe2440a9eba77bed3a7a081b9bb26d792baaec3fcac1eae95b7148bfdcb8c5";
@@ -122,6 +133,13 @@ namespace ControllerLayer
                 };
             });
 
+            // Authorization policies
+            builder.Services.AddAuthorization(options =>
+            {
+                // Use RequireRole so it honors TokenValidationParameters.RoleClaimType = "role"
+                options.AddPolicy("AdminOnly", policy => policy.RequireRole("Admin"));
+            });
+
             var app = builder.Build();
 
             // Configure the HTTP request pipeline.
@@ -141,8 +159,11 @@ namespace ControllerLayer
 
             app.MapControllers();
 
-			// Auto apply EF Core migrations at startup
-			ApplyPendingMigrations(app);
+            // Auto apply EF Core migrations at startup
+            ApplyPendingMigrations(app);
+
+            // Ensure default Admin user exists (moved to Infrastructure)
+            DbSeeder.EnsureAdminUser(app.Services);
 
             app.Run();
         }
@@ -153,5 +174,7 @@ namespace ControllerLayer
 			var dbContext = scope.ServiceProvider.GetRequiredService<LabDbContext>();
 			dbContext.Database.Migrate();
 		}
+
+        // seeding moved to InfrastructureLayer.Data.DbSeeder
     }
 }

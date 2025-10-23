@@ -93,7 +93,14 @@ public class UserService : IUserService
 
     if (request.Roles != null)
     {
-      var roles = await _db.Roles.Where(r => request.Roles.Contains(r.name)).ToListAsync();
+      var requested = request.Roles.Where(s => !string.IsNullOrWhiteSpace(s)).Select(s => s.Trim()).ToArray();
+      var roles = await _db.Roles.Where(r => requested.Contains(r.name)).ToListAsync();
+      if (roles.Count != requested.Length)
+      {
+        var found = roles.Select(r => r.name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var missing = requested.Where(r => !found.Contains(r)).ToArray();
+        throw new Exception($"Roles not found: {string.Join(", ", missing)}");
+      }
       u.Roles.Clear();
       foreach (var r in roles) u.Roles.Add(r);
     }
@@ -117,6 +124,20 @@ public class UserService : IUserService
     var u = await _db.Users.FirstOrDefaultAsync(x => x.Id == id)
       ?? throw new Exception("User not found");
     u.status = Enum.Parse<UserStatus>(request.Status, true);
+    u.LastUpdatedAt = DateTime.UtcNow;
+    await _db.SaveChangesAsync();
+    return await GetByIdAsync(u.Id);
+  }
+
+  public async Task<UserDetail> UpdateRolesAsync(Guid id, UpdateUserRolesRequest request)
+  {
+    var u = await _db.Users.Include(x => x.Roles).FirstOrDefaultAsync(x => x.Id == id)
+      ?? throw new Exception("User not found");
+
+    var roles = await _db.Roles.Where(r => request.Roles.Contains(r.name)).ToListAsync();
+    u.Roles.Clear();
+    foreach (var r in roles) u.Roles.Add(r);
+
     u.LastUpdatedAt = DateTime.UtcNow;
     await _db.SaveChangesAsync();
     return await GetByIdAsync(u.Id);

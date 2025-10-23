@@ -11,9 +11,11 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace ControllerLayer.Controllers
 {
+    /// <summary>
+    /// Nam
+    /// </summary>
     [ApiController]
-    [Route("api/auth")]
-    
+    [Route("api/auth")]    
     public class AuthController : ControllerBase
     {
         private readonly IAuthService _authService;

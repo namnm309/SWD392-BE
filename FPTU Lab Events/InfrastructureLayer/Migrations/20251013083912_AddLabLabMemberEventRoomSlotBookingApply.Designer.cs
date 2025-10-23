@@ -3,6 +3,7 @@ using System;
 using InfrastructureLayer.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace InfrastructureLayer.Migrations
 {
     [DbContext(typeof(LabDbContext))]
-    partial class LabDbContextModelSnapshot : ModelSnapshot
+    [Migration("20251013083912_AddLabLabMemberEventRoomSlotBookingApply")]
+    partial class AddLabLabMemberEventRoomSlotBookingApply
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -166,29 +169,20 @@ namespace InfrastructureLayer.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<Guid>("CreatedBy")
-                        .HasColumnType("uuid");
+                    b.Property<DateTime?>("Deadline")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Description")
                         .HasColumnType("text");
 
-                    b.Property<DateTime>("EndDate")
-                        .HasColumnType("timestamp with time zone");
-
                     b.Property<DateTime>("LastUpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("Location")
-                        .HasColumnType("text");
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uuid");
 
                     b.Property<string>("RecurrenceRule")
                         .HasColumnType("text");
-
-                    b.Property<DateTime>("StartDate")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
 
                     b.Property<string>("Title")
                         .IsRequired()
@@ -199,8 +193,6 @@ namespace InfrastructureLayer.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("CreatedBy");
-
                     b.ToTable("tbl_events");
                 });
 
@@ -209,9 +201,6 @@ namespace InfrastructureLayer.Migrations
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
-
-                    b.Property<int>("Capacity")
-                        .HasColumnType("integer");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -229,15 +218,7 @@ namespace InfrastructureLayer.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<Guid?>("RoomId")
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
-
                     b.HasKey("Id");
-
-                    b.HasIndex("RoomId");
 
                     b.ToTable("tbl_labs");
                 });
@@ -681,27 +662,6 @@ namespace InfrastructureLayer.Migrations
                 {
                     b.HasOne("DomainLayer.Entities.Room", "Room")
                         .WithMany("Equipments")
-                        .HasForeignKey("RoomId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.Navigation("Room");
-                });
-
-            modelBuilder.Entity("DomainLayer.Entities.Event", b =>
-                {
-                    b.HasOne("DomainLayer.Entities.Users", "CreatedByUser")
-                        .WithMany()
-                        .HasForeignKey("CreatedBy")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("CreatedByUser");
-                });
-
-            modelBuilder.Entity("DomainLayer.Entities.Lab", b =>
-                {
-                    b.HasOne("DomainLayer.Entities.Room", "Room")
-                        .WithMany()
                         .HasForeignKey("RoomId")
                         .OnDelete(DeleteBehavior.SetNull);
 

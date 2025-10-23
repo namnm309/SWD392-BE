@@ -7,11 +7,11 @@ using Microsoft.AspNetCore.Mvc;
 namespace ControllerLayer.Controllers
 {
     /// <summary>
-    /// Quản lý người dùng (chỉ Admin)
+    /// Quản lý người dùng (chỉ Admin) - Nam
     /// </summary>
     [ApiController]
     [Route("api/users")]
-    //[Authorize(Roles = "Admin")]
+    [Authorize(Policy = "AdminOnly")]
     public class UsersController : ControllerBase
     {
         private readonly IUserService _userService;
@@ -65,9 +65,9 @@ namespace ControllerLayer.Controllers
         }
 
         /// <summary>
-        /// Update user
+        /// Update user (có thể cập nhật từng cái fullname, mssv, roles) , nào ko up thì khỏi điền
         /// </summary>
-        [HttpPut("{id}")]
+        [HttpPatch("{id}")]
         public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] UpdateUserRequest request)
         {
             try
@@ -97,6 +97,23 @@ namespace ControllerLayer.Controllers
                 return ErrorResp.BadRequest(ex.Message);
             }
         }
+
+        // <summary>
+        // Cập nhật roles của user (Admin only) , vd { "Roles": ["Admin", "Lecturer"] } , chưa có báo bug
+        // </summary>
+        //[HttpPatch("{id}/roles")]
+        //public async Task<IActionResult> UpdateRoles([FromRoute] Guid id, [FromBody] UpdateUserRolesRequest request)
+        //{
+        //    try
+        //    {
+        //        var data = await _userService.UpdateRolesAsync(id, request);
+        //        return SuccessResp.Ok(data);
+        //    }
+        //    catch (Exception ex)
+        //    {
+        //        return ErrorResp.BadRequest(ex.Message);
+        //    }
+        //}
 
         
         [HttpDelete("{id}")]
