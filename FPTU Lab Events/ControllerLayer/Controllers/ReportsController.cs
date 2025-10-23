@@ -208,9 +208,7 @@ namespace ControllerLayer.Controllers
 
         private Guid GetCurrentUserId()
         {
-            var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? 
-                           User.FindFirst("sub")?.Value ?? 
-                           User.FindFirst("id")?.Value;
+            var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
             if (string.IsNullOrEmpty(userIdStr))
                 throw new Exception("User not found");
             return Guid.Parse(userIdStr);

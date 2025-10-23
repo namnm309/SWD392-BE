@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Application.DTOs.Booking;
 using Application.Services.Booking;
 using Microsoft.AspNetCore.Authorization;
@@ -54,9 +55,9 @@ namespace ControllerLayer.Controllers
 		[Authorize]
 		public async Task<ActionResult<BookingDetail>> Create(CreateBookingRequest request)
 		{
-			var userIdClaim = User.FindFirst("id")?.Value;
-			if (string.IsNullOrEmpty(userIdClaim)) return Unauthorized();
-			var result = await _service.CreateAsync(Guid.Parse(userIdClaim), request);
+			var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+			if (string.IsNullOrEmpty(userIdStr)) return Unauthorized();
+			var result = await _service.CreateAsync(Guid.Parse(userIdStr), request);
 			return Ok(result);
 		}
 

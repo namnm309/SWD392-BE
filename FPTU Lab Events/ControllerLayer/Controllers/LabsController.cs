@@ -137,8 +137,8 @@ namespace ControllerLayer.Controllers
             try
             {
                 // Get admin ID from JWT token
-                var adminIdClaim = User.FindFirst("sub") ?? User.FindFirst("id");
-                if (adminIdClaim == null || !Guid.TryParse(adminIdClaim.Value, out var adminId))
+                var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+                if (string.IsNullOrEmpty(userIdStr) || !Guid.TryParse(userIdStr, out var adminId))
                     return ErrorResp.Unauthorized("Invalid admin ID");
 
                 var lab = await _labService.CreateLabAsync(request, adminId);
@@ -160,8 +160,8 @@ namespace ControllerLayer.Controllers
             try
             {
                 // Get admin ID from JWT token
-                var adminIdClaim = User.FindFirst("sub") ?? User.FindFirst("id");
-                if (adminIdClaim == null || !Guid.TryParse(adminIdClaim.Value, out var adminId))
+                var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+                if (string.IsNullOrEmpty(userIdStr) || !Guid.TryParse(userIdStr, out var adminId))
                     return ErrorResp.Unauthorized("Invalid admin ID");
 
                 var lab = await _labService.UpdateLabAsync(id, request, adminId);
@@ -201,8 +201,8 @@ namespace ControllerLayer.Controllers
             try
             {
                 // Get admin ID from JWT token
-                var adminIdClaim = User.FindFirst("sub") ?? User.FindFirst("id");
-                if (adminIdClaim == null || !Guid.TryParse(adminIdClaim.Value, out var adminId))
+                var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+                if (string.IsNullOrEmpty(userIdStr) || !Guid.TryParse(userIdStr, out var adminId))
                     return ErrorResp.Unauthorized("Invalid admin ID");
 
                 await _labService.DeleteLabAsync(id, request, adminId);
