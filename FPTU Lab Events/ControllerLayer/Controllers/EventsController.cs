@@ -137,8 +137,8 @@ namespace ControllerLayer.Controllers
             try
             {
                 // Get admin ID from JWT token
-                var adminIdClaim = User.FindFirst("sub") ?? User.FindFirst("id");
-                if (adminIdClaim == null || !Guid.TryParse(adminIdClaim.Value, out var adminId))
+                var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+                if (string.IsNullOrEmpty(userIdStr) || !Guid.TryParse(userIdStr, out var adminId))
                     return ErrorResp.Unauthorized("Invalid admin ID");
 
                 var eventDetail = await _eventService.CreateEventAsync(request, adminId);
@@ -160,8 +160,8 @@ namespace ControllerLayer.Controllers
             try
             {
                 // Get admin ID from JWT token
-                var adminIdClaim = User.FindFirst("sub") ?? User.FindFirst("id");
-                if (adminIdClaim == null || !Guid.TryParse(adminIdClaim.Value, out var adminId))
+                var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+                if (string.IsNullOrEmpty(userIdStr) || !Guid.TryParse(userIdStr, out var adminId))
                     return ErrorResp.Unauthorized("Invalid admin ID");
 
                 var eventDetail = await _eventService.UpdateEventAsync(id, request, adminId);
@@ -183,8 +183,8 @@ namespace ControllerLayer.Controllers
             try
             {
                 // Get admin ID from JWT token
-                var adminIdClaim = User.FindFirst("sub") ?? User.FindFirst("id");
-                if (adminIdClaim == null || !Guid.TryParse(adminIdClaim.Value, out var adminId))
+                var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+                if (string.IsNullOrEmpty(userIdStr) || !Guid.TryParse(userIdStr, out var adminId))
                     return ErrorResp.Unauthorized("Invalid admin ID");
 
                 await _eventService.DeleteEventAsync(id, request, adminId);
