@@ -5,8 +5,10 @@ using System.Threading.Tasks;
 using Application.DTOs.Report;
 using Application.ResponseCode;
 using Application.Services.Report;
+using InfrastructureLayer.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace ControllerLayer.Controllers
 {
@@ -208,10 +210,32 @@ namespace ControllerLayer.Controllers
 
         private Guid GetCurrentUserId()
         {
-            var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
-            if (string.IsNullOrEmpty(userIdStr))
-                throw new Exception("User not found");
-            return Guid.Parse(userIdStr);
+            // Try different ways to get session ID
+            var sessionIdStr = User.FindFirst("sessionID")?.Value ?? 
+                              User.FindFirst("sessionId")?.Value ?? 
+                              User.FindFirst("SessionID")?.Value ?? 
+                              User.FindFirst("SessionId")?.Value;
+            
+            if (string.IsNullOrEmpty(sessionIdStr))
+            {
+                throw new Exception("Session ID not found in token");
+            }
+            
+            // Get user ID from session
+            using var scope = HttpContext.RequestServices.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<LabDbContext>();
+            
+            var session = db.UserSessions
+                .Include(s => s.User)
+                .ThenInclude(u => u.Roles)
+                .FirstOrDefault(s => s.Id == Guid.Parse(sessionIdStr) && s.RevokedAt == null);
+                
+            if (session == null)
+            {
+                throw new Exception("Session not found or expired");
+            }
+            
+            return session.User.Id;
         }
     }
 }
