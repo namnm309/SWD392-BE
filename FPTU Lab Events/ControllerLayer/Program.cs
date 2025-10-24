@@ -32,6 +32,14 @@ namespace ControllerLayer
                 c.SwaggerDoc("v1", new Microsoft.OpenApi.Models.OpenApiInfo { Title = "FPTU Lab Events API", Version = "v1" });
                 var xmlFilename = $"{System.Reflection.Assembly.GetExecutingAssembly().GetName().Name}.xml";
                 c.IncludeXmlComments(Path.Combine(AppContext.BaseDirectory, xmlFilename), includeControllerXmlComments: true);
+                
+                // Include XML documentation from ApplicationLayer
+                var applicationXmlFilename = "ApplicationLayer.xml";
+                var applicationXmlPath = Path.Combine(AppContext.BaseDirectory, applicationXmlFilename);
+                if (File.Exists(applicationXmlPath))
+                {
+                    c.IncludeXmlComments(applicationXmlPath);
+                }
                 var securityScheme = new Microsoft.OpenApi.Models.OpenApiSecurityScheme
                 {
                     Name = "Authorization",
