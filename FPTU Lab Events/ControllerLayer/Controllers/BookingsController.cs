@@ -55,7 +55,10 @@ namespace ControllerLayer.Controllers
 		[Authorize]
 		public async Task<ActionResult<BookingDetail>> Create(CreateBookingRequest request)
 		{
-			var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+			// Try to get user ID from different claim types
+			var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? 
+						   User.FindFirstValue("nameid") ?? 
+						   User.FindFirstValue("sub");
 			if (string.IsNullOrEmpty(userIdStr)) return Unauthorized();
 			var result = await _service.CreateAsync(Guid.Parse(userIdStr), request);
 			return Ok(result);

@@ -128,7 +128,10 @@ namespace ControllerLayer.Controllers
         {
             try
             {
-                var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.Identity?.Name;
+                var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? 
+                               User.FindFirstValue("nameid") ?? 
+                               User.FindFirstValue("sub") ?? 
+                               User.Identity?.Name;
                 if (string.IsNullOrEmpty(userIdStr)) return ErrorResp.BadRequest("User not found");
                 var me = await _authService.GetMeAsync(Guid.Parse(userIdStr));
                 return SuccessResp.Ok(me);
