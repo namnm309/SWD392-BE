@@ -1,5 +1,5 @@
 # SWD392-Project
-
+![LabEvent | ©2025 by namnm309,hienn12454,tulklk]
 Project Build Check: ![.NET](https://github.com/namnm309/SWD392-BE/actions/workflows/dotnet.yml/badge.svg)
 
 🟢 Green: Build thành công
