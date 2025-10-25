@@ -1,6 +1,8 @@
 # SWD392-Project
 
-Project Build Check: ![LabEvent | ©2025 by namnm309,hienn12454,tulklk](https://github.com/namnm309/SWD392-BE/actions/workflows/dotnet.yml/badge.svg)
+![LabEvent](https://img.shields.io/badge/LabEvent-©2025%20by%20namnm309,hienn12454,tulklk-blue?logo=github&style=for-the-badge)
+
+Project Build Check: ![.NET](https://github.com/namnm309/SWD392-BE/actions/workflows/dotnet.yml/badge.svg)
 
 🟢 Green: Build thành công
 🔴 Red: Build thất bại
