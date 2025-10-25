@@ -1,6 +1,11 @@
 # SWD392-Project
 
+Project Build Check: ![.NET](https://github.com/namnm309/SWD392-BE/actions/workflows/dotnet.yml/badge.svg)
 
+🟢 Green: Build thành công
+🔴 Red: Build thất bại
+🟡 Yellow: Build đang chạy
+⚪ Gray: Chưa có build nào
 
 ![DemoDb](https://github.com/namnm309o/SWD392-FPTU-Lab-Events/blob/main/Other/Database.png)
 
