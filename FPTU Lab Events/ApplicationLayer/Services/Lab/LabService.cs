@@ -305,6 +305,7 @@ namespace Application.Services.Lab
         {
             var labs = await _db.Labs
                 .Include(l => l.Members)
+                .Include(l => l.Room)
                 .Where(l => l.Status == LabStatus.Active)
                 .ToListAsync();
 
@@ -316,6 +317,8 @@ namespace Application.Services.Lab
                 Location = l.Location,
                 Capacity = l.Capacity,
                 Status = l.Status.ToString(),
+                RoomId = l.RoomId,
+                RoomName = l.Room?.Name,
                 MemberCount = l.Members.Count(m => m.Status == LabMemberStatus.Active),
                 EquipmentCount = 0,
                 ActiveBookings = 0
