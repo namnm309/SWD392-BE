@@ -79,6 +79,36 @@ namespace Application.Services.Booking
 			};
 		}
 
+		public async Task<IReadOnlyList<BookingListItem>> GetBookingsByUserIdAsync(Guid userId, int? page = null, int? pageSize = null)
+		{
+			var baseQuery = _db.Bookings
+				.Include(b => b.Room)
+				.Include(b => b.User)
+				.Where(b => b.UserId == userId)
+				.OrderByDescending(b => b.StartTime);
+
+			// Apply pagination if provided
+			var query = page.HasValue && pageSize.HasValue
+				? baseQuery.Skip(page.Value * pageSize.Value).Take(pageSize.Value)
+				: baseQuery;
+
+			var bookings = await query.ToListAsync();
+
+			return bookings.Select(b => new BookingListItem
+			{
+				Id = b.Id,
+				RoomId = b.RoomId,
+				RoomName = b.Room.Name,
+				UserId = b.UserId,
+				UserName = b.User.Fullname,
+				StartTime = b.StartTime,
+				EndTime = b.EndTime,
+				Status = b.Status,
+				EventId = b.EventId,
+				Purpose = b.Purpose
+			}).ToList();
+		}
+
 		public async Task<BookingDetail> CreateAsync(Guid currentUserId, CreateBookingRequest request)
 		{
 			// Validate room and availability

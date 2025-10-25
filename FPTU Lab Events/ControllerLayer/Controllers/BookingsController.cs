@@ -43,6 +43,18 @@ namespace ControllerLayer.Controllers
 		}
 
 		/// <summary>
+		/// Lấy danh sách booking theo userId.
+		/// </summary>
+		/// <param name="userId">Id của user</param>		
+		/// <returns>Danh sách booking của user.</returns>
+		[HttpGet("user/{userId}")]
+		public async Task<ActionResult<IReadOnlyList<BookingListItem>>> GetByUserId(Guid userId, [FromQuery] int? page = null, [FromQuery] int? pageSize = null)
+		{
+			var result = await _service.GetBookingsByUserIdAsync(userId, page, pageSize);
+			return Ok(result);
+		}
+
+		/// <summary>
 		/// Tạo booking mới cho người dùng hiện tại.
 		/// </summary>
 		/// <param name="request">Phải có RoomId với EventId  </param>
