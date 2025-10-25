@@ -49,7 +49,9 @@ namespace Application.Services.Booking
 				UserName = b.User.Fullname,
 				StartTime = b.StartTime,
 				EndTime = b.EndTime,
-				Status = b.Status
+				Status = b.Status,
+				EventId = b.EventId,
+				Purpose = b.Purpose
 			}).ToList();
 		}
 

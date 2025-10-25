@@ -13,12 +13,12 @@ namespace Application.DTOs.Booking
 		public DateTime StartTime { get; set; }
 		public DateTime EndTime { get; set; }
 		public BookingStatus Status { get; set; }
+		public Guid? EventId { get; set; }
+		public string? Purpose { get; set; }
 	}
 
 	public class BookingDetail : BookingListItem
 	{
-		public Guid? EventId { get; set; }
-		public string? Purpose { get; set; }
 		public string? Notes { get; set; }
 	}
 
