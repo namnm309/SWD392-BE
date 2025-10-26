@@ -181,8 +181,9 @@ namespace InfrastructureLayer.Data
                 .HasForeignKey(rs => rs.EventId)
                 .OnDelete(DeleteBehavior.SetNull);
 
+            // Unique constraint: RoomId + Date + SlotNumber (một room chỉ có 1 slot cho mỗi date + slot number)
             modelBuilder.Entity<RoomSlot>()
-                .HasIndex(rs => new { rs.RoomId, rs.DayOfWeek, rs.SlotNumber })
+                .HasIndex(rs => new { rs.RoomId, rs.Date, rs.SlotNumber })
                 .IsUnique();
 
             // BookingApply

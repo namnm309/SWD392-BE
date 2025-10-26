@@ -96,11 +96,13 @@ namespace Application.Services.Room
                 }).ToList();
 
             var roomSlots = room.RoomSlots
-                .OrderBy(rs => rs.DayOfWeek)
+                .OrderBy(rs => rs.Date)
                 .ThenBy(rs => rs.SlotNumber)
                 .Select(rs => new RoomSlotInfo
                 {
                     Id = rs.Id,
+                    Date = rs.Date.Date,
+                    DateFormatted = rs.Date.ToString("dd/MM/yyyy"),
                     SlotNumber = rs.SlotNumber,
                     DayOfWeek = rs.DayOfWeek,
                     DayOfWeekName = GetDayOfWeekName(rs.DayOfWeek),
@@ -298,6 +300,8 @@ namespace Application.Services.Room
             return new RoomSlotInfo
             {
                 Id = slot.Id,
+                Date = slot.Date.Date,
+                DateFormatted = slot.Date.ToString("dd/MM/yyyy"),
                 SlotNumber = slot.SlotNumber,
                 DayOfWeek = slot.DayOfWeek,
                 DayOfWeekName = GetDayOfWeekName(slot.DayOfWeek),
@@ -316,13 +320,15 @@ namespace Application.Services.Room
             var slots = await _db.RoomSlots
                 .Include(rs => rs.Event)
                 .Where(rs => rs.RoomId == roomId)
-                .OrderBy(rs => rs.DayOfWeek)
+                .OrderBy(rs => rs.Date)
                 .ThenBy(rs => rs.SlotNumber)
                 .ToListAsync();
 
             return slots.Select(rs => new RoomSlotInfo
             {
                 Id = rs.Id,
+                Date = rs.Date.Date,
+                DateFormatted = rs.Date.ToString("dd/MM/yyyy"),
                 SlotNumber = rs.SlotNumber,
                 DayOfWeek = rs.DayOfWeek,
                 DayOfWeekName = GetDayOfWeekName(rs.DayOfWeek),
@@ -338,23 +344,20 @@ namespace Application.Services.Room
 
         public async Task<IReadOnlyList<RoomSlotInfo>> GetRoomSlotsByDateRangeAsync(Guid roomId, DateTime startDate, DateTime endDate)
         {
-            // Get day of weeks in the date range
-            var daysOfWeek = new List<int>();
-            for (var date = startDate.Date; date <= endDate.Date; date = date.AddDays(1))
-            {
-                daysOfWeek.Add((int)date.DayOfWeek);
-            }
-
             var slots = await _db.RoomSlots
                 .Include(rs => rs.Event)
-                .Where(rs => rs.RoomId == roomId && daysOfWeek.Contains(rs.DayOfWeek))
-                .OrderBy(rs => rs.DayOfWeek)
+                .Where(rs => rs.RoomId == roomId && 
+                            rs.Date.Date >= startDate.Date && 
+                            rs.Date.Date <= endDate.Date)
+                .OrderBy(rs => rs.Date)
                 .ThenBy(rs => rs.SlotNumber)
                 .ToListAsync();
 
             return slots.Select(rs => new RoomSlotInfo
             {
                 Id = rs.Id,
+                Date = rs.Date.Date,
+                DateFormatted = rs.Date.ToString("dd/MM/yyyy"),
                 SlotNumber = rs.SlotNumber,
                 DayOfWeek = rs.DayOfWeek,
                 DayOfWeekName = GetDayOfWeekName(rs.DayOfWeek),
@@ -383,29 +386,33 @@ namespace Application.Services.Room
                     throw new Exception($"Event not found with ID: {request.EventId.Value}");
             }
 
-            // Check if slot already exists
+            // Validate Date
+            if (request.Date == default)
+                throw new Exception("Date is required");
+
+            // Check if slot already exists for this date
             var existingSlot = await _db.RoomSlots
                 .AnyAsync(rs => rs.RoomId == request.RoomId && 
-                               rs.DayOfWeek == request.DayOfWeek && 
+                               rs.Date.Date == request.Date.Date && 
                                rs.SlotNumber == request.SlotNumber);
 
             if (existingSlot)
-                throw new Exception($"Room slot already exists for Room {room.Name}, Day {request.DayOfWeek} (0=Sun, 1=Mon, ...), Slot {request.SlotNumber}");
+                throw new Exception($"Room slot already exists for Room {room.Name}, Date {request.Date:dd/MM/yyyy}, Slot {request.SlotNumber}");
 
             // Validate slot number (1-8)
             if (request.SlotNumber < 1 || request.SlotNumber > 8)
                 throw new Exception("Slot number must be between 1 and 8");
 
-            // Validate day of week (0-6)
-            if (request.DayOfWeek < 0 || request.DayOfWeek > 6)
-                throw new Exception("Day of week must be between 0 (Sunday) and 6 (Saturday)");
+            // Calculate DayOfWeek from Date
+            var dayOfWeek = (int)request.Date.DayOfWeek;
 
             var roomSlot = new DomainLayer.Entities.RoomSlot
             {
                 Id = Guid.NewGuid(),
                 RoomId = request.RoomId,
+                Date = request.Date.Date,
                 SlotNumber = request.SlotNumber,
-                DayOfWeek = request.DayOfWeek,
+                DayOfWeek = dayOfWeek, // Auto-calculated from Date
                 StartTime = request.StartTime,
                 EndTime = request.EndTime,
                 EventId = request.EventId,
@@ -479,35 +486,44 @@ namespace Application.Services.Room
 
             var createdSlots = new List<DomainLayer.Entities.RoomSlot>();
 
-            // Generate slots for Monday to Friday (1-5)
-            for (int dayOfWeek = 1; dayOfWeek <= 5; dayOfWeek++)
+            // Generate slots for 7 days starting from weekStartDate
+            var currentDate = weekStartDate.Date;
+            for (int day = 0; day < 7; day++)
             {
-                for (int slotNumber = 1; slotNumber <= 8; slotNumber++)
+                var date = currentDate.AddDays(day);
+                var dayOfWeek = (int)date.DayOfWeek;
+
+                // Only generate for weekdays (Monday-Friday)
+                if (dayOfWeek >= 1 && dayOfWeek <= 5)
                 {
-                    // Check if slot already exists
-                    var exists = await _db.RoomSlots
-                        .AnyAsync(rs => rs.RoomId == roomId && 
-                                       rs.DayOfWeek == dayOfWeek && 
-                                       rs.SlotNumber == slotNumber);
-
-                    if (!exists)
+                    for (int slotNumber = 1; slotNumber <= 8; slotNumber++)
                     {
-                        var timeSlot = timeSlots[slotNumber - 1];
-                        var roomSlot = new DomainLayer.Entities.RoomSlot
-                        {
-                            Id = Guid.NewGuid(),
-                            RoomId = roomId,
-                            SlotNumber = slotNumber,
-                            DayOfWeek = dayOfWeek,
-                            StartTime = timeSlot.Start,
-                            EndTime = timeSlot.End,
-                            EventId = null,
-                            Status = null,
-                            CreatedAt = DateTime.UtcNow,
-                            LastUpdatedAt = DateTime.UtcNow
-                        };
+                        // Check if slot already exists for this date
+                        var exists = await _db.RoomSlots
+                            .AnyAsync(rs => rs.RoomId == roomId && 
+                                           rs.Date.Date == date && 
+                                           rs.SlotNumber == slotNumber);
 
-                        createdSlots.Add(roomSlot);
+                        if (!exists)
+                        {
+                            var timeSlot = timeSlots[slotNumber - 1];
+                            var roomSlot = new DomainLayer.Entities.RoomSlot
+                            {
+                                Id = Guid.NewGuid(),
+                                RoomId = roomId,
+                                Date = date,
+                                SlotNumber = slotNumber,
+                                DayOfWeek = dayOfWeek,
+                                StartTime = timeSlot.Start,
+                                EndTime = timeSlot.End,
+                                EventId = null,
+                                Status = null,
+                                CreatedAt = DateTime.UtcNow,
+                                LastUpdatedAt = DateTime.UtcNow
+                            };
+
+                            createdSlots.Add(roomSlot);
+                        }
                     }
                 }
             }

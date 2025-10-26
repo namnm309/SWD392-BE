@@ -28,6 +28,8 @@ namespace Application.DTOs.Room
     public class RoomSlotInfo
     {
         public Guid Id { get; set; }
+        public DateTime Date { get; set; } // Ngày cụ thể (2025-10-20)
+        public string DateFormatted { get; set; } = null!; // "20/10/2025" hoặc "Mon, 20 Oct 2025"
         public int SlotNumber { get; set; } // 1-8
         public int DayOfWeek { get; set; } // 0-6 (0=Sunday, 1=Monday, etc.)
         public string DayOfWeekName { get; set; } = null!; // "Monday", "Tuesday", etc.
@@ -95,8 +97,8 @@ namespace Application.DTOs.Room
     public class CreateRoomSlotRequest
     {
         public Guid RoomId { get; set; }
+        public DateTime Date { get; set; } // Ngày cụ thể (2025-10-20, 2025-10-21, ...)
         public int SlotNumber { get; set; } // 1-8
-        public int DayOfWeek { get; set; } // 0-6
         public TimeOnly StartTime { get; set; }
         public TimeOnly EndTime { get; set; }
         public Guid? EventId { get; set; }
