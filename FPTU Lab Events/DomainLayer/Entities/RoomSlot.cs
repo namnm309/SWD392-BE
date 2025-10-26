@@ -11,9 +11,11 @@ namespace DomainLayer.Entities
 		[ForeignKey(nameof(RoomId))]
 		public Room Room { get; set; } = null!;
 
+		public DateTime Date { get; set; } // Ngày cụ thể của slot (2025-10-20, 2025-10-21, ...)
+
 		public int SlotNumber { get; set; } // 1-8 (Slot 1 -> Slot 8)
 
-		public int DayOfWeek { get; set; } // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+		public int DayOfWeek { get; set; } // 0 = Sunday, 1 = Monday, ..., 6 = Saturday (computed from Date)
 
 		public TimeOnly StartTime { get; set; }
 
