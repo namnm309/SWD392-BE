@@ -22,6 +22,22 @@ namespace Application.DTOs.Room
         public DateTime LastUpdatedAt { get; set; }
         public List<EquipmentInfo> Equipments { get; set; } = new List<EquipmentInfo>();
         public List<BookingInfo> RecentBookings { get; set; } = new List<BookingInfo>();
+        public List<RoomSlotInfo> RoomSlots { get; set; } = new List<RoomSlotInfo>();
+    }
+
+    public class RoomSlotInfo
+    {
+        public Guid Id { get; set; }
+        public int SlotNumber { get; set; } // 1-8
+        public int DayOfWeek { get; set; } // 0-6 (0=Sunday, 1=Monday, etc.)
+        public string DayOfWeekName { get; set; } = null!; // "Monday", "Tuesday", etc.
+        public TimeOnly StartTime { get; set; }
+        public TimeOnly EndTime { get; set; }
+        public string TimeRange { get; set; } = null!; // "12:30-14:45"
+        public Guid? EventId { get; set; }
+        public string? EventTitle { get; set; }
+        public string? EventCode { get; set; } // Course code like "SWD392", "PRN222"
+        public string? Status { get; set; } // "attended", "absent", "pending", null
     }
 
     public class EquipmentInfo
@@ -73,5 +89,30 @@ namespace Application.DTOs.Room
         public int? MaxCapacity { get; set; }
         public int? Page { get; set; }
         public int? PageSize { get; set; }
+    }
+
+    // RoomSlot DTOs
+    public class CreateRoomSlotRequest
+    {
+        public Guid RoomId { get; set; }
+        public int SlotNumber { get; set; } // 1-8
+        public int DayOfWeek { get; set; } // 0-6
+        public TimeOnly StartTime { get; set; }
+        public TimeOnly EndTime { get; set; }
+        public Guid? EventId { get; set; }
+        public string? Status { get; set; }
+    }
+
+    public class UpdateRoomSlotRequest
+    {
+        public Guid? EventId { get; set; }
+        public string? Status { get; set; }
+    }
+
+    public class RoomScheduleRequest
+    {
+        public Guid RoomId { get; set; }
+        public DateTime StartDate { get; set; } // Start of week
+        public DateTime EndDate { get; set; } // End of week
     }
 }

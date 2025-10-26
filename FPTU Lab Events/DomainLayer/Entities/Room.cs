@@ -23,5 +23,7 @@ namespace DomainLayer.Entities
         public ICollection<Booking> Bookings { get; set; } = new List<Booking>();
         
         public ICollection<Equipment> Equipments { get; set; } = new List<Equipment>();
+
+        public ICollection<RoomSlot> RoomSlots { get; set; } = new List<RoomSlot>();
     }
 }
