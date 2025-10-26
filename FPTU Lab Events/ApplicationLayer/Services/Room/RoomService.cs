@@ -70,6 +70,8 @@ namespace Application.Services.Room
                 .Include(r => r.Equipments)
                 .Include(r => r.Bookings.Where(b => b.Status == BookingStatus.Approved))
                     .ThenInclude(b => b.User)
+                .Include(r => r.RoomSlots)
+                    .ThenInclude(rs => rs.Event)
                 .FirstOrDefaultAsync(r => r.Id == id)
                 ?? throw new Exception("Room not found");
 
@@ -93,6 +95,24 @@ namespace Application.Services.Room
                     Status = b.Status.ToString()
                 }).ToList();
 
+            var roomSlots = room.RoomSlots
+                .OrderBy(rs => rs.DayOfWeek)
+                .ThenBy(rs => rs.SlotNumber)
+                .Select(rs => new RoomSlotInfo
+                {
+                    Id = rs.Id,
+                    SlotNumber = rs.SlotNumber,
+                    DayOfWeek = rs.DayOfWeek,
+                    DayOfWeekName = GetDayOfWeekName(rs.DayOfWeek),
+                    StartTime = rs.StartTime,
+                    EndTime = rs.EndTime,
+                    TimeRange = $"{rs.StartTime:HH:mm}-{rs.EndTime:HH:mm}",
+                    EventId = rs.EventId,
+                    EventTitle = rs.Event?.Title,
+                    EventCode = rs.Event?.Title, // Assuming Title contains course code
+                    Status = rs.Status
+                }).ToList();
+
             return new RoomDetail
             {
                 Id = room.Id,
@@ -107,7 +127,23 @@ namespace Application.Services.Room
                 CreatedAt = room.CreatedAt,
                 LastUpdatedAt = room.LastUpdatedAt,
                 Equipments = equipments,
-                RecentBookings = recentBookings
+                RecentBookings = recentBookings,
+                RoomSlots = roomSlots
+            };
+        }
+
+        private string GetDayOfWeekName(int dayOfWeek)
+        {
+            return dayOfWeek switch
+            {
+                0 => "Sunday",
+                1 => "Monday",
+                2 => "Tuesday",
+                3 => "Wednesday",
+                4 => "Thursday",
+                5 => "Friday",
+                6 => "Saturday",
+                _ => "Unknown"
             };
         }
 
@@ -248,6 +284,242 @@ namespace Application.Services.Room
         {
             return await _db.Rooms
                 .CountAsync(r => r.Status == RoomStatus.Available);
+        }
+
+        // RoomSlot Management Methods
+        public async Task<RoomSlotInfo> GetRoomSlotByIdAsync(Guid slotId)
+        {
+            var slot = await _db.RoomSlots
+                .Include(rs => rs.Event)
+                .Include(rs => rs.Room)
+                .FirstOrDefaultAsync(rs => rs.Id == slotId)
+                ?? throw new Exception("RoomSlot not found");
+
+            return new RoomSlotInfo
+            {
+                Id = slot.Id,
+                SlotNumber = slot.SlotNumber,
+                DayOfWeek = slot.DayOfWeek,
+                DayOfWeekName = GetDayOfWeekName(slot.DayOfWeek),
+                StartTime = slot.StartTime,
+                EndTime = slot.EndTime,
+                TimeRange = $"{slot.StartTime:HH:mm}-{slot.EndTime:HH:mm}",
+                EventId = slot.EventId,
+                EventTitle = slot.Event?.Title,
+                EventCode = slot.Event?.Title,
+                Status = slot.Status
+            };
+        }
+
+        public async Task<IReadOnlyList<RoomSlotInfo>> GetRoomSlotsByRoomIdAsync(Guid roomId)
+        {
+            var slots = await _db.RoomSlots
+                .Include(rs => rs.Event)
+                .Where(rs => rs.RoomId == roomId)
+                .OrderBy(rs => rs.DayOfWeek)
+                .ThenBy(rs => rs.SlotNumber)
+                .ToListAsync();
+
+            return slots.Select(rs => new RoomSlotInfo
+            {
+                Id = rs.Id,
+                SlotNumber = rs.SlotNumber,
+                DayOfWeek = rs.DayOfWeek,
+                DayOfWeekName = GetDayOfWeekName(rs.DayOfWeek),
+                StartTime = rs.StartTime,
+                EndTime = rs.EndTime,
+                TimeRange = $"{rs.StartTime:HH:mm}-{rs.EndTime:HH:mm}",
+                EventId = rs.EventId,
+                EventTitle = rs.Event?.Title,
+                EventCode = rs.Event?.Title,
+                Status = rs.Status
+            }).ToList();
+        }
+
+        public async Task<IReadOnlyList<RoomSlotInfo>> GetRoomSlotsByDateRangeAsync(Guid roomId, DateTime startDate, DateTime endDate)
+        {
+            // Get day of weeks in the date range
+            var daysOfWeek = new List<int>();
+            for (var date = startDate.Date; date <= endDate.Date; date = date.AddDays(1))
+            {
+                daysOfWeek.Add((int)date.DayOfWeek);
+            }
+
+            var slots = await _db.RoomSlots
+                .Include(rs => rs.Event)
+                .Where(rs => rs.RoomId == roomId && daysOfWeek.Contains(rs.DayOfWeek))
+                .OrderBy(rs => rs.DayOfWeek)
+                .ThenBy(rs => rs.SlotNumber)
+                .ToListAsync();
+
+            return slots.Select(rs => new RoomSlotInfo
+            {
+                Id = rs.Id,
+                SlotNumber = rs.SlotNumber,
+                DayOfWeek = rs.DayOfWeek,
+                DayOfWeekName = GetDayOfWeekName(rs.DayOfWeek),
+                StartTime = rs.StartTime,
+                EndTime = rs.EndTime,
+                TimeRange = $"{rs.StartTime:HH:mm}-{rs.EndTime:HH:mm}",
+                EventId = rs.EventId,
+                EventTitle = rs.Event?.Title,
+                EventCode = rs.Event?.Title,
+                Status = rs.Status
+            }).ToList();
+        }
+
+        public async Task<RoomSlotInfo> CreateRoomSlotAsync(CreateRoomSlotRequest request)
+        {
+            // Validate room exists
+            var room = await _db.Rooms.FirstOrDefaultAsync(r => r.Id == request.RoomId);
+            if (room == null)
+                throw new Exception($"Room not found with ID: {request.RoomId}");
+
+            // Validate EventId if provided
+            if (request.EventId.HasValue)
+            {
+                var eventExists = await _db.Events.AnyAsync(e => e.Id == request.EventId.Value);
+                if (!eventExists)
+                    throw new Exception($"Event not found with ID: {request.EventId.Value}");
+            }
+
+            // Check if slot already exists
+            var existingSlot = await _db.RoomSlots
+                .AnyAsync(rs => rs.RoomId == request.RoomId && 
+                               rs.DayOfWeek == request.DayOfWeek && 
+                               rs.SlotNumber == request.SlotNumber);
+
+            if (existingSlot)
+                throw new Exception($"Room slot already exists for Room {room.Name}, Day {request.DayOfWeek} (0=Sun, 1=Mon, ...), Slot {request.SlotNumber}");
+
+            // Validate slot number (1-8)
+            if (request.SlotNumber < 1 || request.SlotNumber > 8)
+                throw new Exception("Slot number must be between 1 and 8");
+
+            // Validate day of week (0-6)
+            if (request.DayOfWeek < 0 || request.DayOfWeek > 6)
+                throw new Exception("Day of week must be between 0 (Sunday) and 6 (Saturday)");
+
+            var roomSlot = new DomainLayer.Entities.RoomSlot
+            {
+                Id = Guid.NewGuid(),
+                RoomId = request.RoomId,
+                SlotNumber = request.SlotNumber,
+                DayOfWeek = request.DayOfWeek,
+                StartTime = request.StartTime,
+                EndTime = request.EndTime,
+                EventId = request.EventId,
+                Status = request.Status,
+                CreatedAt = DateTime.UtcNow,
+                LastUpdatedAt = DateTime.UtcNow
+            };
+
+            _db.RoomSlots.Add(roomSlot);
+            await _db.SaveChangesAsync();
+
+            return await GetRoomSlotByIdAsync(roomSlot.Id);
+        }
+
+        public async Task<RoomSlotInfo> UpdateRoomSlotAsync(Guid slotId, UpdateRoomSlotRequest request)
+        {
+            var roomSlot = await _db.RoomSlots.FirstOrDefaultAsync(rs => rs.Id == slotId)
+                ?? throw new Exception($"RoomSlot not found with ID: {slotId}");
+
+            if (request.EventId.HasValue)
+            {
+                // Validate event exists if setting to a value (not null)
+                if (request.EventId.Value != Guid.Empty)
+                {
+                    var eventExists = await _db.Events.AnyAsync(e => e.Id == request.EventId.Value);
+                    if (!eventExists)
+                        throw new Exception($"Event not found with ID: {request.EventId.Value}");
+                }
+                roomSlot.EventId = request.EventId.Value == Guid.Empty ? null : request.EventId.Value;
+            }
+
+            if (request.Status != null)
+                roomSlot.Status = request.Status;
+
+            roomSlot.LastUpdatedAt = DateTime.UtcNow;
+
+            _db.RoomSlots.Update(roomSlot);
+            await _db.SaveChangesAsync();
+
+            return await GetRoomSlotByIdAsync(slotId);
+        }
+
+        public async Task DeleteRoomSlotAsync(Guid slotId)
+        {
+            var roomSlot = await _db.RoomSlots.FirstOrDefaultAsync(rs => rs.Id == slotId)
+                ?? throw new Exception($"RoomSlot not found with ID: {slotId}");
+
+            _db.RoomSlots.Remove(roomSlot);
+            await _db.SaveChangesAsync();
+        }
+
+        public async Task<IReadOnlyList<RoomSlotInfo>> GenerateWeeklyRoomSlotsAsync(Guid roomId, DateTime weekStartDate)
+        {
+            // Validate room exists
+            var room = await _db.Rooms.FirstOrDefaultAsync(r => r.Id == roomId);
+            if (room == null)
+                throw new Exception($"Room not found with ID: {roomId}");
+
+            // Define default time slots (8 slots per day)
+            var timeSlots = new List<(TimeOnly Start, TimeOnly End)>
+            {
+                (new TimeOnly(7, 0), new TimeOnly(9, 0)),     // Slot 1: 07:00-09:00
+                (new TimeOnly(9, 15), new TimeOnly(11, 15)),  // Slot 2: 09:15-11:15
+                (new TimeOnly(12, 30), new TimeOnly(14, 30)), // Slot 3: 12:30-14:30
+                (new TimeOnly(14, 45), new TimeOnly(16, 45)), // Slot 4: 14:45-16:45
+                (new TimeOnly(15, 0), new TimeOnly(17, 0)),   // Slot 5: 15:00-17:00
+                (new TimeOnly(17, 15), new TimeOnly(19, 15)), // Slot 6: 17:15-19:15
+                (new TimeOnly(18, 0), new TimeOnly(20, 0)),   // Slot 7: 18:00-20:00
+                (new TimeOnly(20, 15), new TimeOnly(22, 15))  // Slot 8: 20:15-22:15
+            };
+
+            var createdSlots = new List<DomainLayer.Entities.RoomSlot>();
+
+            // Generate slots for Monday to Friday (1-5)
+            for (int dayOfWeek = 1; dayOfWeek <= 5; dayOfWeek++)
+            {
+                for (int slotNumber = 1; slotNumber <= 8; slotNumber++)
+                {
+                    // Check if slot already exists
+                    var exists = await _db.RoomSlots
+                        .AnyAsync(rs => rs.RoomId == roomId && 
+                                       rs.DayOfWeek == dayOfWeek && 
+                                       rs.SlotNumber == slotNumber);
+
+                    if (!exists)
+                    {
+                        var timeSlot = timeSlots[slotNumber - 1];
+                        var roomSlot = new DomainLayer.Entities.RoomSlot
+                        {
+                            Id = Guid.NewGuid(),
+                            RoomId = roomId,
+                            SlotNumber = slotNumber,
+                            DayOfWeek = dayOfWeek,
+                            StartTime = timeSlot.Start,
+                            EndTime = timeSlot.End,
+                            EventId = null,
+                            Status = null,
+                            CreatedAt = DateTime.UtcNow,
+                            LastUpdatedAt = DateTime.UtcNow
+                        };
+
+                        createdSlots.Add(roomSlot);
+                    }
+                }
+            }
+
+            if (createdSlots.Any())
+            {
+                _db.RoomSlots.AddRange(createdSlots);
+                await _db.SaveChangesAsync();
+            }
+
+            // Return all slots for this room
+            return await GetRoomSlotsByRoomIdAsync(roomId);
         }
     }
 }

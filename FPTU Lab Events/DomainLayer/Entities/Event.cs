@@ -30,6 +30,8 @@ namespace DomainLayer.Entities
 		public Users CreatedByUser { get; set; } = null!;
 
 		public ICollection<Booking> Bookings { get; set; } = new List<Booking>();
+
+		public ICollection<RoomSlot> RoomSlots { get; set; } = new List<RoomSlot>();
 	}
 }
 
