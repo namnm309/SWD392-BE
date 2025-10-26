@@ -21,8 +21,11 @@ namespace ControllerLayer.Controllers
         }
 
         /// <summary>
-        /// Danh sách user pagination
+        /// Lấy danh sách người dùng với phân trang (chỉ dành cho Admin).
         /// </summary>
+        /// <param name="page">Số trang (bắt đầu từ 0).</param>
+        /// <param name="pageSize">Số lượng bản ghi mỗi trang.</param>
+        /// <returns>Danh sách người dùng với thông tin cơ bản.</returns>
         [HttpGet]
         public async Task<IActionResult> List([FromQuery] int? page, [FromQuery] int? pageSize)
         {
@@ -31,8 +34,10 @@ namespace ControllerLayer.Controllers
         }
 
         /// <summary>
-        /// Xem chi tiết user theo Id
+        /// Lấy thông tin chi tiết người dùng theo ID (chỉ dành cho Admin).
         /// </summary>
+        /// <param name="id">ID của người dùng cần lấy thông tin.</param>
+        /// <returns>Thông tin chi tiết người dùng bao gồm roles và trạng thái.</returns>
         [HttpGet("{id}")]
         public async Task<IActionResult> GetById([FromRoute] Guid id)
         {
@@ -48,8 +53,10 @@ namespace ControllerLayer.Controllers
         }
 
         /// <summary>
-        /// Tạo user
+        /// Tạo người dùng mới (chỉ dành cho Admin).
         /// </summary>
+        /// <param name="request">Thông tin tạo người dùng bao gồm username, email, fullname, mssv và roles.</param>
+        /// <returns>Thông tin người dùng vừa tạo.</returns>
         [HttpPost]
         public async Task<IActionResult> Create([FromBody] CreateUserRequest request)
         {
@@ -65,8 +72,11 @@ namespace ControllerLayer.Controllers
         }
 
         /// <summary>
-        /// Update user (có thể cập nhật từng cái fullname, mssv, roles) , nào ko up thì khỏi điền
+        /// Cập nhật thông tin người dùng (chỉ dành cho Admin).
         /// </summary>
+        /// <param name="id">ID của người dùng cần cập nhật.</param>
+        /// <param name="request">Thông tin cập nhật (chỉ điền các trường cần thay đổi).</param>
+        /// <returns>Thông tin người dùng sau khi cập nhật.</returns>
         [HttpPatch("{id}")]
         public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] UpdateUserRequest request)
         {
@@ -82,8 +92,11 @@ namespace ControllerLayer.Controllers
         }
 
         /// <summary>
-        /// Update status user (Active/Inactive/Locked)
+        /// Cập nhật trạng thái người dùng (chỉ dành cho Admin).
         /// </summary>
+        /// <param name="id">ID của người dùng cần cập nhật trạng thái.</param>
+        /// <param name="request">Trạng thái mới (Active=0, Inactive=1, Locked=2).</param>
+        /// <returns>Thông tin người dùng sau khi cập nhật trạng thái.</returns>
         [HttpPatch("{id}/status")]
         public async Task<IActionResult> UpdateStatus([FromRoute] Guid id, [FromBody] UpdateStatusRequest request)
         {
@@ -115,7 +128,11 @@ namespace ControllerLayer.Controllers
         //    }
         //}
 
-        
+        /// <summary>
+        /// Xóa người dùng (chỉ dành cho Admin).
+        /// </summary>
+        /// <param name="id">ID của người dùng cần xóa.</param>
+        /// <returns>Không có nội dung trả về (204 No Content).</returns>
         [HttpDelete("{id}")]
         public async Task<IActionResult> Delete([FromRoute] Guid id)
         {

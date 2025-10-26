@@ -270,20 +270,22 @@ namespace Application.Services.Event
             if (!request.ConfirmDeletion)
                 throw new Exception("Deletion must be confirmed");
 
-            // Check if event has active bookings
-            var hasActiveBookings = await _db.Bookings
-                .AnyAsync(b => b.EventId == id && 
-                              (b.Status == BookingStatus.Pending || b.Status == BookingStatus.Approved));
+            // Check if event has any bookings (for information purposes)
+            var relatedBookings = await _db.Bookings
+                .Where(b => b.EventId == id)
+                .ToListAsync();
 
-            if (hasActiveBookings)
-                throw new Exception("Cannot delete event with active bookings");
+            // Note: We can still delete the event even with bookings because
+            // the database is configured with SetNull behavior for EventId in Bookings
+            // The bookings will remain but their EventId will be set to null
 
             // AC-03: Send notification to users about event cancellation
             await SendEventNotificationAsync(eventEntity.Id, "Event Cancelled", 
                 $"Event '{eventEntity.Title}' has been cancelled.");
 
             // Log deletion event - AC-05
-            await LogEventActionAsync(adminId, eventEntity.Id, eventEntity.Title, "Delete", null);
+            await LogEventActionAsync(adminId, eventEntity.Id, eventEntity.Title, "Delete", 
+                relatedBookings.Any() ? $"Event had {relatedBookings.Count} related bookings" : null);
 
             _db.Events.Remove(eventEntity);
             await _db.SaveChangesAsync();

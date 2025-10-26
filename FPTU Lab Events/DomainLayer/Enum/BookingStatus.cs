@@ -6,12 +6,34 @@ using System.Threading.Tasks;
 
 namespace DomainLayer.Enum
 {
+    /// <summary>
+    /// Trạng thái của booking
+    /// </summary>
     public enum BookingStatus
     {
-        Pending,        // Chờ duyệt
-        Approved,       // Đã duyệt
-        Rejected,       // Từ chối
-        Cancelled,      // Đã hủy
-        Completed       // Hoàn thành
+        /// <summary>
+        /// Chờ duyệt (0)
+        /// </summary>
+        Pending = 0,
+        
+        /// <summary>
+        /// Đã duyệt (1)
+        /// </summary>
+        Approved = 1,
+        
+        /// <summary>
+        /// Từ chối (2)
+        /// </summary>
+        Rejected = 2,
+        
+        /// <summary>
+        /// Đã hủy (3)
+        /// </summary>
+        Cancelled = 3,
+        
+        /// <summary>
+        /// Hoàn thành (4)
+        /// </summary>
+        Completed = 4
     }
 }

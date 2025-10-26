@@ -11,9 +11,6 @@ namespace ControllerLayer.Controllers
     /// </summary>
     [ApiController]
 	[Route("api/[controller]")]
-	/// <summary>
-	/// Quản lý đặt lịch phòng: tạo, xem, cập nhật trạng thái và xóa booking.
-	/// </summary>
 	public class BookingsController : ControllerBase
 	{
 		private readonly IBookingService _service;
@@ -26,7 +23,6 @@ namespace ControllerLayer.Controllers
 		/// <summary>
 		/// Lấy danh sách booking với bộ lọc tùy chọn.
 		/// </summary>
-		/// <param name="filter">Bộ lọc theo phòng, người dùng, trạng thái, khoảng thời gian, phân trang.</param>
 		/// <returns>Danh sách booking rút gọn.</returns>
 		[HttpGet]
 		public async Task<ActionResult<IReadOnlyList<BookingListItem>>> Get([FromQuery] BookingFilterRequest? filter)
@@ -38,7 +34,7 @@ namespace ControllerLayer.Controllers
 		/// <summary>
 		/// Lấy chi tiết một booking theo Id.
 		/// </summary>
-		/// <param name="id">Id booking.</param>
+		/// <param name="id">Id booking </param>
 		/// <returns>Thông tin chi tiết booking.</returns>
 		[HttpGet("{id}")]
 		public async Task<ActionResult<BookingDetail>> GetById(Guid id)
@@ -47,26 +43,41 @@ namespace ControllerLayer.Controllers
 		}
 
 		/// <summary>
+		/// Lấy danh sách booking theo userId.
+		/// </summary>
+		/// <param name="userId">Id của user</param>		
+		/// <returns>Danh sách booking của user.</returns>
+		[HttpGet("user/{userId}")]
+		public async Task<ActionResult<IReadOnlyList<BookingListItem>>> GetByUserId(Guid userId, [FromQuery] int? page = null, [FromQuery] int? pageSize = null)
+		{
+			var result = await _service.GetBookingsByUserIdAsync(userId, page, pageSize);
+			return Ok(result);
+		}
+
+		/// <summary>
 		/// Tạo booking mới cho người dùng hiện tại.
 		/// </summary>
-		/// <param name="request">Thông tin tạo booking.</param>
-		/// <returns>Booking vừa tạo.</returns>
+		/// <param name="request">Phải có RoomId với EventId  </param>
+		/// <returns>Booking vừa tạo với trạng thái Pending (chờ duyệt).</returns>
 		[HttpPost]
 		[Authorize]
 		public async Task<ActionResult<BookingDetail>> Create(CreateBookingRequest request)
 		{
-			var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+			// Try to get user ID from different claim types
+			var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? 
+						   User.FindFirstValue("nameid") ?? 
+						   User.FindFirstValue("sub");
 			if (string.IsNullOrEmpty(userIdStr)) return Unauthorized();
 			var result = await _service.CreateAsync(Guid.Parse(userIdStr), request);
 			return Ok(result);
 		}
 
 		/// <summary>
-		/// Cập nhật trạng thái của một booking.
+		/// Cập nhật trạng thái của một booking (chỉ dành cho Admin).
 		/// </summary>
-		/// <param name="id">Id booking.</param>
-		/// <param name="request">Trạng thái mới và ghi chú.</param>
-		/// <returns>Booking sau khi cập nhật.</returns>
+		/// <param name="id">Id booking cần cập nhật trạng thái.</param>
+		/// <param name="request">Trạng thái mới (Pending=0, Approved=1, Rejected=2, Cancelled=3, Completed=4) và ghi chú.</param>
+		/// <returns>Booking sau khi cập nhật trạng thái.</returns>
 		[HttpPatch("{id}/status")]
 		[Authorize]
 		public async Task<ActionResult<BookingDetail>> UpdateStatus(Guid id, UpdateBookingStatusRequest request)
@@ -75,10 +86,10 @@ namespace ControllerLayer.Controllers
 		}
 
 		/// <summary>
-		/// Xóa một booking theo Id.
+		/// Xóa một booking theo Id (chỉ dành cho Admin hoặc người tạo booking).
 		/// </summary>
-		/// <param name="id">Id booking.</param>
-		/// <returns>No content.</returns>
+		/// <param name="id">Id booking cần xóa.</param>
+		/// <returns>Không có nội dung trả về (204 No Content).</returns>
 		[HttpDelete("{id}")]
 		[Authorize]
 		public async Task<IActionResult> Delete(Guid id)
