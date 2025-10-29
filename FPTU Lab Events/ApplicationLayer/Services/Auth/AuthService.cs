@@ -198,7 +198,8 @@ public class AuthService : IAuthService
     var user = await _db.Users.Include(u => u.Roles).FirstOrDefaultAsync(u => u.Email.ToLower() == email);
     if (user == null)
     {
-      var roleStudent = await _db.Roles.FirstAsync(r => r.name == "Student");
+      var roleName = DetermineRoleFromEmail(email);
+      var roleToAssign = await _db.Roles.FirstAsync(r => r.name == roleName);
       var initialPlainPassword = GenerateReadablePassword(12);
       user = new Users
       {
@@ -212,7 +213,7 @@ public class AuthService : IAuthService
         CreatedAt = DateTime.UtcNow,
         LastUpdatedAt = DateTime.UtcNow,
       };
-      user.Roles.Add(roleStudent);
+      user.Roles.Add(roleToAssign);
       _db.Users.Add(user);
 
       await TrySendInitialPasswordEmailAsync(email, user.Username, initialPlainPassword);
@@ -248,7 +249,8 @@ public class AuthService : IAuthService
     var user = await _db.Users.Include(u => u.Roles).FirstOrDefaultAsync(u => u.Email.ToLower() == email);
     if (user == null)
     {
-      var roleStudent = await _db.Roles.FirstAsync(r => r.name == "Student");
+      var roleName = DetermineRoleFromEmail(email);
+      var roleToAssign = await _db.Roles.FirstAsync(r => r.name == roleName);
       var initialPlainPassword = GenerateReadablePassword(12);
       user = new Users
       {
@@ -262,7 +264,7 @@ public class AuthService : IAuthService
         CreatedAt = DateTime.UtcNow,
         LastUpdatedAt = DateTime.UtcNow,
       };
-      user.Roles.Add(roleStudent);
+      user.Roles.Add(roleToAssign);
       _db.Users.Add(user);
 
       await TrySendInitialPasswordEmailAsync(email, user.Username, initialPlainPassword);
@@ -345,6 +347,17 @@ public class AuthService : IAuthService
     var letters = match.Groups[1].Value.ToUpperInvariant();
     var digits = match.Groups[2].Value;
     return string.IsNullOrEmpty(letters) || string.IsNullOrEmpty(digits) ? null : letters + digits;
+  }
+
+  private static string DetermineRoleFromEmail(string email)
+  {
+    // Mặc định: Student nếu local-part kết thúc bằng 2 chữ + 6 số, ngược lại: Lecturer
+    if (string.IsNullOrWhiteSpace(email)) return "Lecturer";
+    var parts = email.Split('@');
+    if (parts.Length != 2) return "Lecturer";
+    var local = parts[0].ToLowerInvariant();
+    var match = Regex.Match(local, "([a-z]{2})(\\d{6})$", RegexOptions.IgnoreCase);
+    return match.Success ? "Student" : "Lecturer";
   }
 
   private static string GenerateRandomToken(int length)
