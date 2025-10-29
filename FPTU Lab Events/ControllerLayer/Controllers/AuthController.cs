@@ -72,7 +72,7 @@ namespace ControllerLayer.Controllers
         {
             try
             {
-                var allowed = new[] { "fpt.edu.vn", "fe.edu.vn" };
+                var allowed = new[] { "fpt.edu.vn" };
                 var tokens = await _authService.LoginWithGoogleIdTokenAsync(request.IdToken, allowed);
                 return SuccessResp.Ok(tokens);
             }
@@ -163,7 +163,7 @@ namespace ControllerLayer.Controllers
             try
             {
                 // chỉ cho domain FPT
-                var allowed = new[] { "fpt.edu.vn", "fe.edu.vn" };
+                var allowed = new[] { "fpt.edu.vn" };
                 var tokens = await _authService.HandleGoogleCallbackAsync(request.Code, request.RedirectUri, allowed);
                 return SuccessResp.Ok(tokens);
             }

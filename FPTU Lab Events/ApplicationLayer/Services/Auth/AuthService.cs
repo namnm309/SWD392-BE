@@ -55,10 +55,17 @@ public class AuthService : IAuthService
     var email = request.Email.Trim().ToLowerInvariant();
     var username = request.Username.Trim();
 
+    // Chỉ cho phép đăng ký bằng email FPT
+    var domain = email.Split('@').LastOrDefault() ?? string.Empty;
+    if (!domain.EndsWith("fpt.edu.vn", StringComparison.OrdinalIgnoreCase))
+    {
+      throw new Exception("Chỉ cho phép mail fpt.edu.vn");
+    }
+
     if (await _db.Users.AnyAsync(u => u.Email.ToLower() == email))
-      throw new Exception("Email already exists");
+      throw new Exception("Email đã tồn tại");
     if (await _db.Users.AnyAsync(u => u.Username == username))
-      throw new Exception("Username already exists");
+      throw new Exception("Username đã tồn tại");
 
     var roleStudent = await _db.Roles.FirstAsync(r => r.name == "Student");
 
@@ -69,7 +76,7 @@ public class AuthService : IAuthService
       Username = username,
       Fullname = request.Fullname ?? username,
       Password = BCrypt.Net.BCrypt.HashPassword(request.Password),
-      MSSV = request.MSSV,
+      MSSV = string.IsNullOrWhiteSpace(request.MSSV) ? ExtractMssvFromFptEmail(email) : request.MSSV,
       status = UserStatus.Active,
       CreatedAt = DateTime.UtcNow,
       LastUpdatedAt = DateTime.UtcNow
@@ -329,7 +336,7 @@ public class AuthService : IAuthService
     var parts = email.Split('@');
     if (parts.Length != 2) return null;
     var domain = parts[1].ToLowerInvariant();
-    if (!(domain.EndsWith("fpt.edu.vn") || domain.EndsWith("fe.edu.vn"))) return null;
+    if (!domain.EndsWith("fpt.edu.vn")) return null;
 
     var local = parts[0].ToLowerInvariant();
     // 2 chữ trước số là mã ngành 
