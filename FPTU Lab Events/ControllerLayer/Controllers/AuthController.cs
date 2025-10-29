@@ -174,7 +174,7 @@ namespace ControllerLayer.Controllers
         }
 
         /// <summary>
-        /// Gửi mã OTP để reset password qua email.
+        /// Gửi OTP reset password qua mail
         /// </summary>
         [HttpPost("forgot-password")]
         [AllowAnonymous]
@@ -192,7 +192,7 @@ namespace ControllerLayer.Controllers
         }
 
         /// <summary>
-        /// Reset password bằng mã OTP.
+        /// Reset password 
         /// </summary>
         [HttpPost("reset-password")]
         [AllowAnonymous]
