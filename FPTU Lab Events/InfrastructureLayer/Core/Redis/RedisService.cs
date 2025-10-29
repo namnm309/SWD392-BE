@@ -9,6 +9,11 @@ namespace InfrastructureLayer.Core.Redis
         Task<string?> GetOtpAsync(string email);
         Task DeleteOtpAsync(string email);
         Task<bool> ValidateOtpAsync(string email, string otp);
+
+        // Generic cache helpers
+        Task SetAsync<T>(string key, T value, TimeSpan? expiry = null);
+        Task<T?> GetAsync<T>(string key);
+        Task<bool> RemoveAsync(string key);
     }
 
     public class RedisService : IRedisService
@@ -51,6 +56,25 @@ namespace InfrastructureLayer.Core.Redis
             }
             
             return isValid;
+        }
+
+        // Generic cache helpers
+        public async Task SetAsync<T>(string key, T value, TimeSpan? expiry = null)
+        {
+            var json = JsonSerializer.Serialize(value);
+            await _database.StringSetAsync(key, json, expiry);
+        }
+
+        public async Task<T?> GetAsync<T>(string key)
+        {
+            var data = await _database.StringGetAsync(key);
+            if (data.IsNullOrEmpty) return default;
+            return JsonSerializer.Deserialize<T>(data!);
+        }
+
+        public Task<bool> RemoveAsync(string key)
+        {
+            return _database.KeyDeleteAsync(key);
         }
     }
 }
