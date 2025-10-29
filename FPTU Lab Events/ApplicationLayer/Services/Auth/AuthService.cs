@@ -3,6 +3,7 @@ using System.Linq;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Application.DTOs.Auth;
 using DomainLayer.Constants;
@@ -199,6 +200,7 @@ public class AuthService : IAuthService
         Username = email.Split('@')[0],
         Fullname = googlePayload.Name ?? email,
         Password = BCrypt.Net.BCrypt.HashPassword(initialPlainPassword),
+        MSSV = ExtractMssvFromFptEmail(email),
         status = UserStatus.Active,
         CreatedAt = DateTime.UtcNow,
         LastUpdatedAt = DateTime.UtcNow,
@@ -207,6 +209,20 @@ public class AuthService : IAuthService
       _db.Users.Add(user);
 
       await TrySendInitialPasswordEmailAsync(email, user.Username, initialPlainPassword);
+    }
+    else
+    {
+      // Tự động gán MSSV nếu chưa có
+      if (string.IsNullOrWhiteSpace(user.MSSV))
+      {
+        var extracted = ExtractMssvFromFptEmail(email);
+        if (!string.IsNullOrWhiteSpace(extracted))
+        {
+          user.MSSV = extracted;
+          user.LastUpdatedAt = DateTime.UtcNow;
+          _db.Users.Update(user);
+        }
+      }
     }
 
     var (session, refreshPlain) = CreateSession(user, device: "google-oauth", ipAddress: null);
@@ -234,6 +250,7 @@ public class AuthService : IAuthService
         Username = email.Split('@')[0],
         Fullname = googlePayload.Name ?? email,
         Password = BCrypt.Net.BCrypt.HashPassword(initialPlainPassword),
+        MSSV = ExtractMssvFromFptEmail(email),
         status = UserStatus.Active,
         CreatedAt = DateTime.UtcNow,
         LastUpdatedAt = DateTime.UtcNow,
@@ -242,6 +259,20 @@ public class AuthService : IAuthService
       _db.Users.Add(user);
 
       await TrySendInitialPasswordEmailAsync(email, user.Username, initialPlainPassword);
+    }
+    else
+    {
+      // Tự động gán MSSV nếu chưa có
+      if (string.IsNullOrWhiteSpace(user.MSSV))
+      {
+        var extracted = ExtractMssvFromFptEmail(email);
+        if (!string.IsNullOrWhiteSpace(extracted))
+        {
+          user.MSSV = extracted;
+          user.LastUpdatedAt = DateTime.UtcNow;
+          _db.Users.Update(user);
+        }
+      }
     }
 
     var (session, refreshPlain) = CreateSession(user, device: "google-idtoken", ipAddress: null);
@@ -284,10 +315,29 @@ public class AuthService : IAuthService
         email = user.Email,
         username = user.Username,
         fullname = user.Fullname,
+        mssv = user.MSSV,
         roles = user.Roles.Select(r => r.name).ToArray(),
         status = user.status.ToString()
       }
     };
+  }
+
+  //regex
+  private static string? ExtractMssvFromFptEmail(string email)
+  {
+    if (string.IsNullOrWhiteSpace(email)) return null;
+    var parts = email.Split('@');
+    if (parts.Length != 2) return null;
+    var domain = parts[1].ToLowerInvariant();
+    if (!(domain.EndsWith("fpt.edu.vn") || domain.EndsWith("fe.edu.vn"))) return null;
+
+    var local = parts[0].ToLowerInvariant();
+    // 2 chữ trước số là mã ngành 
+    var match = Regex.Match(local, "([a-z]{2})(\\d+)$", RegexOptions.IgnoreCase);
+    if (!match.Success) return null;
+    var letters = match.Groups[1].Value.ToUpperInvariant();
+    var digits = match.Groups[2].Value;
+    return string.IsNullOrEmpty(letters) || string.IsNullOrEmpty(digits) ? null : letters + digits;
   }
 
   private static string GenerateRandomToken(int length)
