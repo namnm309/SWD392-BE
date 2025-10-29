@@ -172,6 +172,42 @@ namespace ControllerLayer.Controllers
                 return ErrorResp.Unauthorized(ex.Message);
             }
         }
+
+        /// <summary>
+        /// Gửi mã OTP để reset password qua email.
+        /// </summary>
+        [HttpPost("forgot-password")]
+        [AllowAnonymous]
+        public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordRequest request)
+        {
+            try
+            {
+                var resp = await _authService.ForgotPasswordAsync(request);
+                return SuccessResp.Ok(resp);
+            }
+            catch (Exception ex)
+            {
+                return ErrorResp.BadRequest(ex.Message);
+            }
+        }
+
+        /// <summary>
+        /// Reset password bằng mã OTP.
+        /// </summary>
+        [HttpPost("reset-password")]
+        [AllowAnonymous]
+        public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordRequest request)
+        {
+            try
+            {
+                var resp = await _authService.ResetPasswordAsync(request);
+                return SuccessResp.Ok(resp);
+            }
+            catch (Exception ex)
+            {
+                return ErrorResp.BadRequest(ex.Message);
+            }
+        }
         
        
     }

@@ -10,6 +10,7 @@ using DomainLayer.Entities;
 using DomainLayer.Enum;
 using InfrastructureLayer.Core.JWT;
 using InfrastructureLayer.Core.Mail;
+using InfrastructureLayer.Core.Redis;
 using InfrastructureLayer.Data;
 using InfrastructureLayer.Repository;
 using Microsoft.EntityFrameworkCore;
@@ -27,6 +28,8 @@ public interface IAuthService
   Task<string> GetGoogleAuthorizationUrlAsync(string redirectUri, string state);
   Task<TokenResponse> HandleGoogleCallbackAsync(string code, string redirectUri, string[] allowedDomains);
   Task<TokenResponse> LoginWithGoogleIdTokenAsync(string idToken, string[] allowedDomains);
+  Task<ForgotPasswordResponse> ForgotPasswordAsync(ForgotPasswordRequest request);
+  Task<ResetPasswordResponse> ResetPasswordAsync(ResetPasswordRequest request);
 }
 
 public class AuthService : IAuthService
@@ -35,13 +38,15 @@ public class AuthService : IAuthService
   private readonly IJwtService _jwt;
   private readonly IConfiguration _config;
   private readonly IMailService _mailService;
+  private readonly IRedisService _redisService;
 
-  public AuthService(LabDbContext db, IJwtService jwt, IConfiguration config, IMailService mailService)
+  public AuthService(LabDbContext db, IJwtService jwt, IConfiguration config, IMailService mailService, IRedisService redisService)
   {
     _db = db;
     _jwt = jwt;
     _config = config;
     _mailService = mailService;
+    _redisService = redisService;
   }
 
   public async Task<TokenResponse> RegisterAsync(RegisterRequest request)
@@ -319,16 +324,132 @@ public class AuthService : IAuthService
     {
       var subject = "FPTU Lab Events - Mật khẩu lần đầu";
       var message = $@"<p>Xin chào {System.Net.WebUtility.HtmlEncode(username)},</p>
-<p>Tài khoản của bạn đã được tạo khi đăng nhập bằng email FPT.</p>
-<p><b>Tên đăng nhập:</b> {System.Net.WebUtility.HtmlEncode(username)}<br/>
-<b>Mật khẩu tạm thời:</b> {System.Net.WebUtility.HtmlEncode(plainPassword)}</p>
-<p>Vì lý do bảo mật, hãy đăng nhập và đổi mật khẩu ngay sau lần đầu sử dụng.</p>
-<p>Trân trọng,<br/>FPTU Lab Events</p>";
+                    <p>Tài khoản của bạn đã được tạo khi đăng nhập bằng email FPT.</p>
+                    <p><b>Tên đăng nhập:</b> {System.Net.WebUtility.HtmlEncode(username)}<br/>
+                    <b>Mật khẩu tạm thời:</b> {System.Net.WebUtility.HtmlEncode(plainPassword)}</p>
+                    <p>Vì lý do bảo mật, hãy đăng nhập và đổi mật khẩu ngay sau lần đầu sử dụng.</p>
+                    <p>Trân trọng,<br/>FPTU Lab Events</p>";
       await _mailService.SendEmailAsync(email, subject, message);
     }
     catch (Exception ex)
     {
       Console.WriteLine($"[MailError] Failed to send initial password to {email}: {ex.Message}");
+    }
+  }
+
+  public async Task<ForgotPasswordResponse> ForgotPasswordAsync(ForgotPasswordRequest request)
+  {
+    var email = request.Email.Trim().ToLowerInvariant();
+    
+    // Kiểm tra user có tồn tại không
+    var user = await _db.Users.FirstOrDefaultAsync(u => u.Email.ToLower() == email);
+    if (user == null)
+    {
+      // Không tiết lộ thông tin user có tồn tại hay không
+      return new ForgotPasswordResponse 
+      { 
+        Message = "Nếu email tồn tại trong hệ thống, bạn sẽ nhận được mã OTP để reset mật khẩu." 
+      };
+    }
+
+    // Generate OTP 6 số
+    var otp = GenerateOtp(6);
+    
+    // Lưu OTP vào Redis với thời gian hết hạn 5 phút
+    await _redisService.SetOtpAsync(email, otp, TimeSpan.FromMinutes(5));
+    
+    // Gửi email OTP
+    await TrySendOtpEmailAsync(email, user.Username, otp);
+    
+    return new ForgotPasswordResponse 
+    { 
+      Message = "Nếu email tồn tại trong hệ thống, bạn sẽ nhận được mã OTP để reset mật khẩu." 
+    };
+  }
+
+  public async Task<ResetPasswordResponse> ResetPasswordAsync(ResetPasswordRequest request)
+  {
+    var email = request.Email.Trim().ToLowerInvariant();
+    var otp = request.Otp.Trim();
+    var newPassword = request.NewPassword.Trim();
+    
+    // Validate OTP
+    var isValidOtp = await _redisService.ValidateOtpAsync(email, otp);
+    if (!isValidOtp)
+    {
+      throw new Exception("Mã OTP không hợp lệ hoặc đã hết hạn");
+    }
+    
+    // Tìm user
+    var user = await _db.Users.FirstOrDefaultAsync(u => u.Email.ToLower() == email);
+    if (user == null)
+    {
+      throw new Exception("Người dùng không tồn tại");
+    }
+    
+    // Cập nhật mật khẩu mới
+    user.Password = BCrypt.Net.BCrypt.HashPassword(newPassword);
+    user.LastUpdatedAt = DateTime.UtcNow;
+    
+    _db.Users.Update(user);
+    await _db.SaveChangesAsync();
+    
+    return new ResetPasswordResponse 
+    { 
+      Message = "Mật khẩu đã được reset thành công. Bạn có thể đăng nhập với mật khẩu mới." 
+    };
+  }
+
+  private static string GenerateOtp(int length)
+  {
+    var rng = System.Security.Cryptography.RandomNumberGenerator.Create();
+    var bytes = new byte[length];
+    rng.GetBytes(bytes);
+    
+    var otp = "";
+    for (int i = 0; i < length; i++)
+    {
+      otp += (bytes[i] % 10).ToString();
+    }
+    return otp;
+  }
+
+  private async Task TrySendOtpEmailAsync(string email, string username, string otp)
+  {
+    try
+    {
+      var subject = "FPTU Lab Events - Mã OTP Reset Mật Khẩu";
+      var message = $@"<div style=""font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;"">
+        <div style=""background-color: #f8f9fa; padding: 30px; border-radius: 10px; text-align: center;"">
+          <h2 style=""color: #333; margin-bottom: 20px;"">Reset Mật Khẩu</h2>
+          <p style=""color: #666; font-size: 16px; margin-bottom: 20px;"">Xin chào <strong>{System.Net.WebUtility.HtmlEncode(username)}</strong>,</p>
+          <p style=""color: #666; font-size: 16px; margin-bottom: 30px;"">Bạn đã yêu cầu reset mật khẩu cho tài khoản FPTU Lab Events.</p>
+          
+          <div style=""background-color: #fff; border: 2px dashed #007bff; padding: 20px; border-radius: 8px; margin: 20px 0;"">
+            <p style=""color: #333; font-size: 14px; margin: 0 0 10px 0;"">Mã OTP của bạn:</p>
+            <h1 style=""color: #007bff; font-size: 32px; font-weight: bold; margin: 0; letter-spacing: 5px;"">{otp}</h1>
+          </div>
+          
+          <p style=""color: #e74c3c; font-size: 14px; margin: 20px 0;""><strong>⚠️ Lưu ý:</strong></p>
+          <ul style=""color: #666; font-size: 14px; text-align: left; margin: 20px 0;"">
+            <li>Mã OTP có hiệu lực trong <strong>5 phút</strong></li>
+            <li>Chỉ sử dụng một lần duy nhất</li>
+            <li>Không chia sẻ mã này với bất kỳ ai</li>
+          </ul>
+          
+          <p style=""color: #666; font-size: 14px; margin-top: 30px;"">Nếu bạn không yêu cầu reset mật khẩu, vui lòng bỏ qua email này.</p>
+          
+          <hr style=""border: none; border-top: 1px solid #eee; margin: 30px 0;"">
+          <p style=""color: #999; font-size: 12px;"">Trân trọng,<br/>Đội ngũ FPTU Lab Events</p>
+        </div>
+      </div>";
+      
+      await _mailService.SendEmailAsync(email, subject, message);
+    }
+    catch (Exception ex)
+    {
+      Console.WriteLine($"[MailError] Failed to send OTP to {email}: {ex.Message}");
+      throw new Exception("Không thể gửi email OTP. Vui lòng thử lại sau.");
     }
   }
 }

@@ -39,4 +39,26 @@ public class GoogleCallbackRequest
   public string RedirectUri { get; set; } = null!;
 }
 
+public class ForgotPasswordRequest
+{
+  public string Email { get; set; } = null!;
+}
+
+public class ResetPasswordRequest
+{
+  public string Email { get; set; } = null!;
+  public string Otp { get; set; } = null!;
+  public string NewPassword { get; set; } = null!;
+}
+
+public class ForgotPasswordResponse
+{
+  public string Message { get; set; } = null!;
+}
+
+public class ResetPasswordResponse
+{
+  public string Message { get; set; } = null!;
+}
+
 
