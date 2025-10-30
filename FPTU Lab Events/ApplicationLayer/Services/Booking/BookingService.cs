@@ -2,21 +2,29 @@ using Application.DTOs.Booking;
 using DomainLayer.Entities;
 using DomainLayer.Enum;
 using InfrastructureLayer.Data;
+using InfrastructureLayer.Core.Redis;
 using Microsoft.EntityFrameworkCore;
 
 namespace Application.Services.Booking
 {
 	public class BookingService : IBookingService
 	{
-		private readonly LabDbContext _db;
+        private readonly LabDbContext _db;
+        private readonly IRedisService _redis;
 
-		public BookingService(LabDbContext db)
-		{
-			_db = db;
-		}
+        public BookingService(LabDbContext db, IRedisService redis)
+        {
+            _db = db;
+            _redis = redis;
+        }
 
-		public async Task<IReadOnlyList<BookingListItem>> GetBookingsAsync(BookingFilterRequest? filter = null)
+        public async Task<IReadOnlyList<BookingListItem>> GetBookingsAsync(BookingFilterRequest? filter = null)
 		{
+            // Cache key dựa theo filter để không phá vỡ API cũ
+            var cacheKey = BuildCacheKey(filter);
+            var cached = await _redis.GetAsync<IReadOnlyList<BookingListItem>>(cacheKey);
+            if (cached != null) return cached;
+
 			var query = _db.Bookings
 				.Include(b => b.Room)
 				.Include(b => b.User)
@@ -39,8 +47,8 @@ namespace Application.Services.Booking
 						   .Take(filter.PageSize.Value);
 			}
 
-			var items = await query.ToListAsync();
-			return items.Select(b => new BookingListItem
+            var items = await query.ToListAsync();
+            var result = items.Select(b => new BookingListItem
 			{
 				Id = b.Id,
 				RoomId = b.RoomId,
@@ -52,7 +60,11 @@ namespace Application.Services.Booking
 				Status = b.Status,
 				EventId = b.EventId,
 				Purpose = b.Purpose
-			}).ToList();
+            }).ToList();
+
+            // Lưu cache ngắn hạn để giảm tải, TTL 30s
+            await _redis.SetAsync(cacheKey, result, TimeSpan.FromSeconds(30));
+            return result;
 		}
 
 		public async Task<BookingDetail> GetByIdAsync(Guid id)
@@ -139,9 +151,9 @@ namespace Application.Services.Booking
 				LastUpdatedAt = DateTime.UtcNow
 			};
 
-			_db.Bookings.Add(booking);
+            _db.Bookings.Add(booking);
 			await _db.SaveChangesAsync();
-
+            await InvalidateListCaches(booking.UserId);
 			return await GetByIdAsync(booking.Id);
 		}
 
@@ -154,9 +166,9 @@ namespace Application.Services.Booking
 			booking.Notes = request.Notes ?? booking.Notes;
 			booking.LastUpdatedAt = DateTime.UtcNow;
 
-			_db.Bookings.Update(booking);
+            _db.Bookings.Update(booking);
 			await _db.SaveChangesAsync();
-
+            await InvalidateListCaches(booking.UserId);
 			return await GetByIdAsync(booking.Id);
 		}
 
@@ -164,9 +176,34 @@ namespace Application.Services.Booking
 		{
 			var booking = await _db.Bookings.FirstOrDefaultAsync(b => b.Id == id)
 				?? throw new Exception("Booking not found");
-			_db.Bookings.Remove(booking);
+            _db.Bookings.Remove(booking);
 			await _db.SaveChangesAsync();
+            await InvalidateListCaches(booking.UserId);
 		}
+
+        private static string BuildCacheKey(BookingFilterRequest? filter)
+        {
+            if (filter == null)
+            {
+                return "bookings:all:v1";
+            }
+            var parts = new List<string> { "bookings:v1" };
+            if (filter.RoomId.HasValue) parts.Add($"room:{filter.RoomId.Value}");
+            if (filter.UserId.HasValue) parts.Add($"user:{filter.UserId.Value}");
+            if (filter.Status.HasValue) parts.Add($"status:{(int)filter.Status.Value}");
+            if (filter.From.HasValue) parts.Add($"from:{filter.From.Value:O}");
+            if (filter.To.HasValue) parts.Add($"to:{filter.To.Value:O}");
+            if (filter.Page.HasValue && filter.PageSize.HasValue)
+                parts.Add($"page:{filter.Page.Value}:{filter.PageSize.Value}");
+            return string.Join('|', parts);
+        }
+
+        private async Task InvalidateListCaches(Guid userId)
+        {
+            // Xóa các key phổ biến; tránh đụng FE
+            await _redis.RemoveAsync("bookings:all:v1");
+            await _redis.RemoveAsync($"bookings:v1|user:{userId}");
+        }
 	}
 }
 

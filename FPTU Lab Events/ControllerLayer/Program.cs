@@ -13,6 +13,8 @@ using Application.Services.Role;
 using DomainLayer.Entities;
 using DomainLayer.Enum;
 using System.IdentityModel.Tokens.Jwt;
+using StackExchange.Redis;
+using InfrastructureLayer.Core.Redis;
 
 namespace ControllerLayer
 {
@@ -92,10 +94,26 @@ namespace ControllerLayer
 				var server = cfg["Mail:SmtpServer"] ?? "smtp.gmail.com";
 				var portStr = cfg["Mail:SmtpPort"];
 				var port = int.TryParse(portStr, out var p) ? p : 587;
-				var user = cfg["Mail:Username"] ?? cfg["SMTPEmail"] ?? string.Empty;
-				var pass = cfg["Mail:Password"] ?? cfg["SMTPPassword"] ?? string.Empty;
+				// Ưu tiên biến môi trường, sau đó key root, cuối cùng mới tới Mail:Username/Password
+				var envUser = Environment.GetEnvironmentVariable("SMTPEmail");
+				var envPass = Environment.GetEnvironmentVariable("SMTPPassword");
+				var rootUser = cfg["SMTPEmail"];
+				var rootPass = cfg["SMTPPassword"];
+				var mailUser = cfg["Mail:Username"];
+				var mailPass = cfg["Mail:Password"];
+				var user = envUser ?? rootUser ?? mailUser ?? string.Empty;
+				var passRaw = envPass ?? rootPass ?? mailPass ?? string.Empty;
+				var pass = string.IsNullOrEmpty(passRaw) ? string.Empty : passRaw.Replace(" ", "");
 				return new MailService(server, port, user, pass);
 			});
+
+			// Redis service
+			builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
+			{
+				var connectionString = builder.Configuration["Redis:ConnectionString"];
+				return ConnectionMultiplexer.Connect(connectionString);
+			});
+			builder.Services.AddScoped<IRedisService, RedisService>();
 
             // JWT Service
             builder.Services.AddScoped<IJwtService, JwtService>();

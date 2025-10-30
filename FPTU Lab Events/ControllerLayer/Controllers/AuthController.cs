@@ -72,7 +72,7 @@ namespace ControllerLayer.Controllers
         {
             try
             {
-                var allowed = new[] { "fpt.edu.vn", "fe.edu.vn" };
+                var allowed = new[] { "fpt.edu.vn" };
                 var tokens = await _authService.LoginWithGoogleIdTokenAsync(request.IdToken, allowed);
                 return SuccessResp.Ok(tokens);
             }
@@ -163,13 +163,49 @@ namespace ControllerLayer.Controllers
             try
             {
                 // chỉ cho domain FPT
-                var allowed = new[] { "fpt.edu.vn", "fe.edu.vn" };
+                var allowed = new[] { "fpt.edu.vn" };
                 var tokens = await _authService.HandleGoogleCallbackAsync(request.Code, request.RedirectUri, allowed);
                 return SuccessResp.Ok(tokens);
             }
             catch (Exception ex)
             {
                 return ErrorResp.Unauthorized(ex.Message);
+            }
+        }
+
+        /// <summary>
+        /// Gửi OTP reset password qua mail
+        /// </summary>
+        [HttpPost("forgot-password")]
+        [AllowAnonymous]
+        public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordRequest request)
+        {
+            try
+            {
+                var resp = await _authService.ForgotPasswordAsync(request);
+                return SuccessResp.Ok(resp);
+            }
+            catch (Exception ex)
+            {
+                return ErrorResp.BadRequest(ex.Message);
+            }
+        }
+
+        /// <summary>
+        /// Reset password 
+        /// </summary>
+        [HttpPost("reset-password")]
+        [AllowAnonymous]
+        public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordRequest request)
+        {
+            try
+            {
+                var resp = await _authService.ResetPasswordAsync(request);
+                return SuccessResp.Ok(resp);
+            }
+            catch (Exception ex)
+            {
+                return ErrorResp.BadRequest(ex.Message);
             }
         }
         

@@ -3,6 +3,7 @@ using System.Linq;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Application.DTOs.Auth;
 using DomainLayer.Constants;
@@ -10,6 +11,7 @@ using DomainLayer.Entities;
 using DomainLayer.Enum;
 using InfrastructureLayer.Core.JWT;
 using InfrastructureLayer.Core.Mail;
+using InfrastructureLayer.Core.Redis;
 using InfrastructureLayer.Data;
 using InfrastructureLayer.Repository;
 using Microsoft.EntityFrameworkCore;
@@ -27,6 +29,8 @@ public interface IAuthService
   Task<string> GetGoogleAuthorizationUrlAsync(string redirectUri, string state);
   Task<TokenResponse> HandleGoogleCallbackAsync(string code, string redirectUri, string[] allowedDomains);
   Task<TokenResponse> LoginWithGoogleIdTokenAsync(string idToken, string[] allowedDomains);
+  Task<ForgotPasswordResponse> ForgotPasswordAsync(ForgotPasswordRequest request);
+  Task<ResetPasswordResponse> ResetPasswordAsync(ResetPasswordRequest request);
 }
 
 public class AuthService : IAuthService
@@ -35,13 +39,15 @@ public class AuthService : IAuthService
   private readonly IJwtService _jwt;
   private readonly IConfiguration _config;
   private readonly IMailService _mailService;
+  private readonly IRedisService _redisService;
 
-  public AuthService(LabDbContext db, IJwtService jwt, IConfiguration config, IMailService mailService)
+  public AuthService(LabDbContext db, IJwtService jwt, IConfiguration config, IMailService mailService, IRedisService redisService)
   {
     _db = db;
     _jwt = jwt;
     _config = config;
     _mailService = mailService;
+    _redisService = redisService;
   }
 
   public async Task<TokenResponse> RegisterAsync(RegisterRequest request)
@@ -49,10 +55,17 @@ public class AuthService : IAuthService
     var email = request.Email.Trim().ToLowerInvariant();
     var username = request.Username.Trim();
 
+    // Chỉ cho phép đăng ký bằng email FPT
+    var domain = email.Split('@').LastOrDefault() ?? string.Empty;
+    if (!domain.EndsWith("fpt.edu.vn", StringComparison.OrdinalIgnoreCase))
+    {
+      throw new Exception("Chỉ cho phép mail fpt.edu.vn");
+    }
+
     if (await _db.Users.AnyAsync(u => u.Email.ToLower() == email))
-      throw new Exception("Email already exists");
+      throw new Exception("Email đã tồn tại");
     if (await _db.Users.AnyAsync(u => u.Username == username))
-      throw new Exception("Username already exists");
+      throw new Exception("Username đã tồn tại");
 
     var roleStudent = await _db.Roles.FirstAsync(r => r.name == "Student");
 
@@ -63,7 +76,7 @@ public class AuthService : IAuthService
       Username = username,
       Fullname = request.Fullname ?? username,
       Password = BCrypt.Net.BCrypt.HashPassword(request.Password),
-      MSSV = request.MSSV,
+      MSSV = string.IsNullOrWhiteSpace(request.MSSV) ? ExtractMssvFromFptEmail(email) : request.MSSV,
       status = UserStatus.Active,
       CreatedAt = DateTime.UtcNow,
       LastUpdatedAt = DateTime.UtcNow
@@ -185,7 +198,8 @@ public class AuthService : IAuthService
     var user = await _db.Users.Include(u => u.Roles).FirstOrDefaultAsync(u => u.Email.ToLower() == email);
     if (user == null)
     {
-      var roleStudent = await _db.Roles.FirstAsync(r => r.name == "Student");
+      var roleName = DetermineRoleFromEmail(email);
+      var roleToAssign = await _db.Roles.FirstAsync(r => r.name == roleName);
       var initialPlainPassword = GenerateReadablePassword(12);
       user = new Users
       {
@@ -194,14 +208,29 @@ public class AuthService : IAuthService
         Username = email.Split('@')[0],
         Fullname = googlePayload.Name ?? email,
         Password = BCrypt.Net.BCrypt.HashPassword(initialPlainPassword),
+        MSSV = ExtractMssvFromFptEmail(email),
         status = UserStatus.Active,
         CreatedAt = DateTime.UtcNow,
         LastUpdatedAt = DateTime.UtcNow,
       };
-      user.Roles.Add(roleStudent);
+      user.Roles.Add(roleToAssign);
       _db.Users.Add(user);
 
       await TrySendInitialPasswordEmailAsync(email, user.Username, initialPlainPassword);
+    }
+    else
+    {
+      // Tự động gán MSSV nếu chưa có
+      if (string.IsNullOrWhiteSpace(user.MSSV))
+      {
+        var extracted = ExtractMssvFromFptEmail(email);
+        if (!string.IsNullOrWhiteSpace(extracted))
+        {
+          user.MSSV = extracted;
+          user.LastUpdatedAt = DateTime.UtcNow;
+          _db.Users.Update(user);
+        }
+      }
     }
 
     var (session, refreshPlain) = CreateSession(user, device: "google-oauth", ipAddress: null);
@@ -220,7 +249,8 @@ public class AuthService : IAuthService
     var user = await _db.Users.Include(u => u.Roles).FirstOrDefaultAsync(u => u.Email.ToLower() == email);
     if (user == null)
     {
-      var roleStudent = await _db.Roles.FirstAsync(r => r.name == "Student");
+      var roleName = DetermineRoleFromEmail(email);
+      var roleToAssign = await _db.Roles.FirstAsync(r => r.name == roleName);
       var initialPlainPassword = GenerateReadablePassword(12);
       user = new Users
       {
@@ -229,14 +259,29 @@ public class AuthService : IAuthService
         Username = email.Split('@')[0],
         Fullname = googlePayload.Name ?? email,
         Password = BCrypt.Net.BCrypt.HashPassword(initialPlainPassword),
+        MSSV = ExtractMssvFromFptEmail(email),
         status = UserStatus.Active,
         CreatedAt = DateTime.UtcNow,
         LastUpdatedAt = DateTime.UtcNow,
       };
-      user.Roles.Add(roleStudent);
+      user.Roles.Add(roleToAssign);
       _db.Users.Add(user);
 
       await TrySendInitialPasswordEmailAsync(email, user.Username, initialPlainPassword);
+    }
+    else
+    {
+      // Tự động gán MSSV nếu chưa có
+      if (string.IsNullOrWhiteSpace(user.MSSV))
+      {
+        var extracted = ExtractMssvFromFptEmail(email);
+        if (!string.IsNullOrWhiteSpace(extracted))
+        {
+          user.MSSV = extracted;
+          user.LastUpdatedAt = DateTime.UtcNow;
+          _db.Users.Update(user);
+        }
+      }
     }
 
     var (session, refreshPlain) = CreateSession(user, device: "google-idtoken", ipAddress: null);
@@ -279,10 +324,40 @@ public class AuthService : IAuthService
         email = user.Email,
         username = user.Username,
         fullname = user.Fullname,
+        mssv = user.MSSV,
         roles = user.Roles.Select(r => r.name).ToArray(),
         status = user.status.ToString()
       }
     };
+  }
+
+  //regex
+  private static string? ExtractMssvFromFptEmail(string email)
+  {
+    if (string.IsNullOrWhiteSpace(email)) return null;
+    var parts = email.Split('@');
+    if (parts.Length != 2) return null;
+    var domain = parts[1].ToLowerInvariant();
+    if (!domain.EndsWith("fpt.edu.vn")) return null;
+
+    var local = parts[0].ToLowerInvariant();
+    // 2 chữ trước số là mã ngành 
+    var match = Regex.Match(local, "([a-z]{2})(\\d+)$", RegexOptions.IgnoreCase);
+    if (!match.Success) return null;
+    var letters = match.Groups[1].Value.ToUpperInvariant();
+    var digits = match.Groups[2].Value;
+    return string.IsNullOrEmpty(letters) || string.IsNullOrEmpty(digits) ? null : letters + digits;
+  }
+
+  private static string DetermineRoleFromEmail(string email)
+  {
+    // Mặc định: Student nếu local-part kết thúc bằng 2 chữ + 6 số, ngược lại: Lecturer
+    if (string.IsNullOrWhiteSpace(email)) return "Lecturer";
+    var parts = email.Split('@');
+    if (parts.Length != 2) return "Lecturer";
+    var local = parts[0].ToLowerInvariant();
+    var match = Regex.Match(local, "([a-z]{2})(\\d{6})$", RegexOptions.IgnoreCase);
+    return match.Success ? "Student" : "Lecturer";
   }
 
   private static string GenerateRandomToken(int length)
@@ -319,16 +394,132 @@ public class AuthService : IAuthService
     {
       var subject = "FPTU Lab Events - Mật khẩu lần đầu";
       var message = $@"<p>Xin chào {System.Net.WebUtility.HtmlEncode(username)},</p>
-<p>Tài khoản của bạn đã được tạo khi đăng nhập bằng email FPT.</p>
-<p><b>Tên đăng nhập:</b> {System.Net.WebUtility.HtmlEncode(username)}<br/>
-<b>Mật khẩu tạm thời:</b> {System.Net.WebUtility.HtmlEncode(plainPassword)}</p>
-<p>Vì lý do bảo mật, hãy đăng nhập và đổi mật khẩu ngay sau lần đầu sử dụng.</p>
-<p>Trân trọng,<br/>FPTU Lab Events</p>";
+                    <p>Tài khoản của bạn đã được tạo khi đăng nhập bằng email FPT.</p>
+                    <p><b>Tên đăng nhập:</b> {System.Net.WebUtility.HtmlEncode(username)}<br/>
+                    <b>Mật khẩu tạm thời:</b> {System.Net.WebUtility.HtmlEncode(plainPassword)}</p>
+                    <p>Vì lý do bảo mật, hãy đăng nhập và đổi mật khẩu ngay sau lần đầu sử dụng.</p>
+                    <p>Trân trọng,<br/>FPTU Lab Events</p>";
       await _mailService.SendEmailAsync(email, subject, message);
     }
     catch (Exception ex)
     {
       Console.WriteLine($"[MailError] Failed to send initial password to {email}: {ex.Message}");
+    }
+  }
+
+  public async Task<ForgotPasswordResponse> ForgotPasswordAsync(ForgotPasswordRequest request)
+  {
+    var email = request.Email.Trim().ToLowerInvariant();
+    
+    // Kiểm tra user có tồn tại không
+    var user = await _db.Users.FirstOrDefaultAsync(u => u.Email.ToLower() == email);
+    if (user == null)
+    {
+      // Không tiết lộ thông tin user có tồn tại hay không
+      return new ForgotPasswordResponse 
+      { 
+        Message = "Nếu email tồn tại trong hệ thống, bạn sẽ nhận được mã OTP để reset mật khẩu." 
+      };
+    }
+
+    // Generate OTP 6 số
+    var otp = GenerateOtp(6);
+    
+    // Lưu OTP vào Redis với thời gian hết hạn 5 phút
+    await _redisService.SetOtpAsync(email, otp, TimeSpan.FromMinutes(5));
+    
+    // Gửi email OTP
+    await TrySendOtpEmailAsync(email, user.Username, otp);
+    
+    return new ForgotPasswordResponse 
+    { 
+      Message = "Nếu email tồn tại trong hệ thống, bạn sẽ nhận được mã OTP để reset mật khẩu." 
+    };
+  }
+
+  public async Task<ResetPasswordResponse> ResetPasswordAsync(ResetPasswordRequest request)
+  {
+    var email = request.Email.Trim().ToLowerInvariant();
+    var otp = request.Otp.Trim();
+    var newPassword = request.NewPassword.Trim();
+    
+    // Validate OTP
+    var isValidOtp = await _redisService.ValidateOtpAsync(email, otp);
+    if (!isValidOtp)
+    {
+      throw new Exception("Mã OTP không hợp lệ hoặc đã hết hạn");
+    }
+    
+    // Tìm user
+    var user = await _db.Users.FirstOrDefaultAsync(u => u.Email.ToLower() == email);
+    if (user == null)
+    {
+      throw new Exception("Người dùng không tồn tại");
+    }
+    
+    // Cập nhật mật khẩu mới
+    user.Password = BCrypt.Net.BCrypt.HashPassword(newPassword);
+    user.LastUpdatedAt = DateTime.UtcNow;
+    
+    _db.Users.Update(user);
+    await _db.SaveChangesAsync();
+    
+    return new ResetPasswordResponse 
+    { 
+      Message = "Mật khẩu đã được reset thành công. Bạn có thể đăng nhập với mật khẩu mới." 
+    };
+  }
+
+  private static string GenerateOtp(int length)
+  {
+    var rng = System.Security.Cryptography.RandomNumberGenerator.Create();
+    var bytes = new byte[length];
+    rng.GetBytes(bytes);
+    
+    var otp = "";
+    for (int i = 0; i < length; i++)
+    {
+      otp += (bytes[i] % 10).ToString();
+    }
+    return otp;
+  }
+
+  private async Task TrySendOtpEmailAsync(string email, string username, string otp)
+  {
+    try
+    {
+      var subject = "FPTU Lab Events - Mã OTP Reset Mật Khẩu";
+      var message = $@"<div style=""font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;"">
+        <div style=""background-color: #f8f9fa; padding: 30px; border-radius: 10px; text-align: center;"">
+          <h2 style=""color: #333; margin-bottom: 20px;"">Reset Mật Khẩu</h2>
+          <p style=""color: #666; font-size: 16px; margin-bottom: 20px;"">Xin chào <strong>{System.Net.WebUtility.HtmlEncode(username)}</strong>,</p>
+          <p style=""color: #666; font-size: 16px; margin-bottom: 30px;"">Bạn đã yêu cầu reset mật khẩu cho tài khoản FPTU Lab Events.</p>
+          
+          <div style=""background-color: #fff; border: 2px dashed #007bff; padding: 20px; border-radius: 8px; margin: 20px 0;"">
+            <p style=""color: #333; font-size: 14px; margin: 0 0 10px 0;"">Mã OTP của bạn:</p>
+            <h1 style=""color: #007bff; font-size: 32px; font-weight: bold; margin: 0; letter-spacing: 5px;"">{otp}</h1>
+          </div>
+          
+          <p style=""color: #e74c3c; font-size: 14px; margin: 20px 0;""><strong>⚠️ Lưu ý:</strong></p>
+          <ul style=""color: #666; font-size: 14px; text-align: left; margin: 20px 0;"">
+            <li>Mã OTP có hiệu lực trong <strong>5 phút</strong></li>
+            <li>Chỉ sử dụng một lần duy nhất</li>
+            <li>Không chia sẻ mã này với bất kỳ ai</li>
+          </ul>
+          
+          <p style=""color: #666; font-size: 14px; margin-top: 30px;"">Nếu bạn không yêu cầu reset mật khẩu, vui lòng bỏ qua email này.</p>
+          
+          <hr style=""border: none; border-top: 1px solid #eee; margin: 30px 0;"">
+          <p style=""color: #999; font-size: 12px;"">Trân trọng,<br/>Đội ngũ FPTU Lab Events</p>
+        </div>
+      </div>";
+      
+      await _mailService.SendEmailAsync(email, subject, message);
+    }
+    catch (Exception ex)
+    {
+      Console.WriteLine($"[MailError] Failed to send OTP to {email}: {ex.Message}");
+      throw new Exception("Không thể gửi email OTP. Vui lòng thử lại sau.");
     }
   }
 }
