@@ -371,6 +371,47 @@ namespace Application.Services.Room
             }).ToList();
         }
 
+        public async Task<IReadOnlyList<RoomSlotInfo>> GetAvailableRoomSlotsAsync(Guid roomId, DateTime? startDate = null, DateTime? endDate = null)
+        {
+            // Validate room exists
+            var room = await _db.Rooms.FindAsync(roomId);
+            if (room == null)
+                throw new Exception($"Room not found with ID: {roomId}");
+
+            var query = _db.RoomSlots
+                .Include(rs => rs.Event)
+                .Where(rs => rs.RoomId == roomId && rs.EventId == null); // Only slots without event
+
+            // Apply date range filter if provided
+            if (startDate.HasValue)
+                query = query.Where(rs => rs.Date.Date >= startDate.Value.Date);
+
+            if (endDate.HasValue)
+                query = query.Where(rs => rs.Date.Date <= endDate.Value.Date);
+
+            var slots = await query
+                .OrderBy(rs => rs.Date)
+                .ThenBy(rs => rs.SlotNumber)
+                .ToListAsync();
+
+            return slots.Select(rs => new RoomSlotInfo
+            {
+                Id = rs.Id,
+                Date = rs.Date.Date,
+                DateFormatted = rs.Date.ToString("dd/MM/yyyy"),
+                SlotNumber = rs.SlotNumber,
+                DayOfWeek = rs.DayOfWeek,
+                DayOfWeekName = GetDayOfWeekName(rs.DayOfWeek),
+                StartTime = rs.StartTime,
+                EndTime = rs.EndTime,
+                TimeRange = $"{rs.StartTime:HH:mm}-{rs.EndTime:HH:mm}",
+                EventId = null,
+                EventTitle = null,
+                EventCode = null,
+                Status = rs.Status
+            }).ToList();
+        }
+
         public async Task<RoomSlotInfo> CreateRoomSlotAsync(CreateRoomSlotRequest request)
         {
             // Validate room exists

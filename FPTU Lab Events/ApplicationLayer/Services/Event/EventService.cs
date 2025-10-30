@@ -78,6 +78,8 @@ namespace Application.Services.Event
                     .ThenInclude(b => b.User)
                 .Include(e => e.Bookings)
                     .ThenInclude(b => b.Room)
+                .Include(e => e.RoomSlots)
+                    .ThenInclude(rs => rs.Room)
                 .FirstOrDefaultAsync(e => e.Id == id)
                 ?? throw new Exception("Event not found");
 
@@ -91,6 +93,22 @@ namespace Application.Services.Event
                 Status = b.Status.ToString(),
                 Purpose = b.Purpose
             }).ToList();
+
+            var roomSlots = eventEntity.RoomSlots.Select(rs => new EventRoomSlotInfo
+            {
+                Id = rs.Id,
+                RoomId = rs.RoomId,
+                RoomName = rs.Room.Name,
+                Date = rs.Date,
+                DateFormatted = rs.Date.ToString("dd/MM/yyyy"),
+                SlotNumber = rs.SlotNumber,
+                DayOfWeekName = GetDayOfWeekName(rs.DayOfWeek),
+                TimeRange = $"{rs.StartTime:HH:mm}-{rs.EndTime:HH:mm}",
+                Status = rs.Status
+            }).ToList();
+
+            // Determine RoomId from first RoomSlot
+            var firstSlot = eventEntity.RoomSlots.FirstOrDefault();
 
             return new EventDetail
             {
@@ -108,7 +126,25 @@ namespace Application.Services.Event
                 CreatedAt = eventEntity.CreatedAt,
                 LastUpdatedAt = eventEntity.LastUpdatedAt,
                 RecurrenceRule = eventEntity.RecurrenceRule,
-                Bookings = bookings
+                Bookings = bookings,
+                RoomId = firstSlot?.RoomId,
+                RoomName = firstSlot?.Room.Name,
+                RoomSlots = roomSlots
+            };
+        }
+
+        private string GetDayOfWeekName(int dayOfWeek)
+        {
+            return dayOfWeek switch
+            {
+                0 => "Sunday",
+                1 => "Monday",
+                2 => "Tuesday",
+                3 => "Wednesday",
+                4 => "Thursday",
+                5 => "Friday",
+                6 => "Saturday",
+                _ => "Unknown"
             };
         }
 
@@ -134,6 +170,44 @@ namespace Application.Services.Event
             if (existingEvent)
                 throw new Exception("Event with this title already exists on the same date");
 
+            // Validate Room if provided
+            if (request.RoomId.HasValue)
+            {
+                var roomExists = await _db.Rooms.AnyAsync(r => r.Id == request.RoomId.Value);
+                if (!roomExists)
+                    throw new Exception($"Room not found with ID: {request.RoomId.Value}");
+            }
+
+            // Validate RoomSlots if provided
+            if (request.RoomSlotIds != null && request.RoomSlotIds.Any())
+            {
+                // Get all requested room slots
+                var roomSlots = await _db.RoomSlots
+                    .Include(rs => rs.Room)
+                    .Where(rs => request.RoomSlotIds.Contains(rs.Id))
+                    .ToListAsync();
+
+                if (roomSlots.Count != request.RoomSlotIds.Count)
+                    throw new Exception("Some RoomSlots not found");
+
+                // Check if all slots belong to the same room
+                var distinctRoomIds = roomSlots.Select(rs => rs.RoomId).Distinct().ToList();
+                if (distinctRoomIds.Count > 1)
+                    throw new Exception("All RoomSlots must belong to the same Room");
+
+                // If RoomId is provided, validate it matches the slots' room
+                if (request.RoomId.HasValue && !distinctRoomIds.Contains(request.RoomId.Value))
+                    throw new Exception("RoomSlots do not belong to the specified Room");
+
+                // Check if any slot already has an event
+                var slotsWithEvents = roomSlots.Where(rs => rs.EventId.HasValue).ToList();
+                if (slotsWithEvents.Any())
+                {
+                    var slotInfo = slotsWithEvents.First();
+                    throw new Exception($"RoomSlot (Date: {slotInfo.Date:dd/MM/yyyy}, Slot: {slotInfo.SlotNumber}) is already assigned to another event");
+                }
+            }
+
             var eventEntity = new DomainLayer.Entities.Event
             {
                 Id = Guid.NewGuid(),
@@ -155,6 +229,23 @@ namespace Application.Services.Event
                 _db.Events.Add(eventEntity);
                 await _db.SaveChangesAsync();
                 Console.WriteLine($"Event created successfully with ID: {eventEntity.Id}");
+
+                // Assign Event to RoomSlots if provided
+                if (request.RoomSlotIds != null && request.RoomSlotIds.Any())
+                {
+                    var roomSlotsToUpdate = await _db.RoomSlots
+                        .Where(rs => request.RoomSlotIds.Contains(rs.Id))
+                        .ToListAsync();
+
+                    foreach (var slot in roomSlotsToUpdate)
+                    {
+                        slot.EventId = eventEntity.Id;
+                        slot.LastUpdatedAt = DateTime.UtcNow;
+                    }
+
+                    await _db.SaveChangesAsync();
+                    Console.WriteLine($"Assigned event to {roomSlotsToUpdate.Count} room slots");
+                }
             }
             catch (Exception ex)
             {
