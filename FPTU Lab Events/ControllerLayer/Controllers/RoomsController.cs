@@ -326,5 +326,25 @@ namespace ControllerLayer.Controllers
                 return ErrorResp.BadRequest(ex.Message);
             }
         }
+
+        /// <summary>
+        /// Lấy room slots có sẵn (chưa có event) của một phòng
+        /// </summary>
+        [HttpGet("{roomId}/slots/available")]
+        public async Task<IActionResult> GetAvailableRoomSlots(
+            Guid roomId, 
+            [FromQuery] DateTime? startDate = null, 
+            [FromQuery] DateTime? endDate = null)
+        {
+            try
+            {
+                var slots = await _roomService.GetAvailableRoomSlotsAsync(roomId, startDate, endDate);
+                return SuccessResp.Ok(slots);
+            }
+            catch (Exception ex)
+            {
+                return ErrorResp.BadRequest(ex.Message);
+            }
+        }
     }
 }

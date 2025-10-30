@@ -24,6 +24,22 @@ namespace Application.DTOs.Event
         public DateTime LastUpdatedAt { get; set; }
         public string? RecurrenceRule { get; set; }
         public List<BookingInfo> Bookings { get; set; } = new List<BookingInfo>();
+        public Guid? RoomId { get; set; }
+        public string? RoomName { get; set; }
+        public List<EventRoomSlotInfo> RoomSlots { get; set; } = new List<EventRoomSlotInfo>();
+    }
+
+    public class EventRoomSlotInfo
+    {
+        public Guid Id { get; set; }
+        public Guid RoomId { get; set; }
+        public string RoomName { get; set; } = null!;
+        public DateTime Date { get; set; }
+        public string DateFormatted { get; set; } = null!;
+        public int SlotNumber { get; set; }
+        public string DayOfWeekName { get; set; } = null!;
+        public string TimeRange { get; set; } = null!;
+        public string? Status { get; set; }
     }
 
     public class BookingInfo
@@ -47,6 +63,10 @@ namespace Application.DTOs.Event
         public EventStatus Status { get; set; } = EventStatus.Active;
         public bool Visibility { get; set; } = true;
         public string? RecurrenceRule { get; set; }
+        
+        // Room & RoomSlot selection
+        public Guid? RoomId { get; set; } // Optional: Chọn phòng
+        public List<Guid>? RoomSlotIds { get; set; } // Optional: Chọn các slot trong phòng
     }
 
     public class UpdateEventRequest

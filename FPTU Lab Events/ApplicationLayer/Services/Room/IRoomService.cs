@@ -23,6 +23,7 @@ namespace Application.Services.Room
         Task<RoomSlotInfo> GetRoomSlotByIdAsync(Guid slotId);
         Task<IReadOnlyList<RoomSlotInfo>> GetRoomSlotsByRoomIdAsync(Guid roomId);
         Task<IReadOnlyList<RoomSlotInfo>> GetRoomSlotsByDateRangeAsync(Guid roomId, DateTime startDate, DateTime endDate);
+        Task<IReadOnlyList<RoomSlotInfo>> GetAvailableRoomSlotsAsync(Guid roomId, DateTime? startDate = null, DateTime? endDate = null);
         Task<RoomSlotInfo> CreateRoomSlotAsync(CreateRoomSlotRequest request);
         Task<RoomSlotInfo> UpdateRoomSlotAsync(Guid slotId, UpdateRoomSlotRequest request);
         Task DeleteRoomSlotAsync(Guid slotId);
