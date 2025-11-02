@@ -22,16 +22,20 @@ namespace DomainLayer.Entities
 
 		public bool Visibility { get; set; } = true;
 
-		public string? RecurrenceRule { get; set; }
+	public string? RecurrenceRule { get; set; }
 
-		public Guid CreatedBy { get; set; }
+	public int Capacity { get; set; }
 
-		[ForeignKey(nameof(CreatedBy))]
-		public Users CreatedByUser { get; set; } = null!;
+	public string? ImageUrl { get; set; }
 
-		public ICollection<Booking> Bookings { get; set; } = new List<Booking>();
+	public Guid CreatedBy { get; set; }
 
-		public ICollection<RoomSlot> RoomSlots { get; set; } = new List<RoomSlot>();
+	[ForeignKey(nameof(CreatedBy))]
+	public Users CreatedByUser { get; set; } = null!;
+
+	public ICollection<Booking> Bookings { get; set; } = new List<Booking>();
+
+	public ICollection<RoomSlot> RoomSlots { get; set; } = new List<RoomSlot>();
 	}
 }
 

@@ -7,11 +7,8 @@ namespace Application.DTOs.Room
     {
         public Guid Id { get; set; }
         public string Name { get; set; } = null!;
-        public string Description { get; set; } = null!;
-        public string Location { get; set; } = null!;
         public int Capacity { get; set; }
         public string Status { get; set; } = null!;
-        public string? ImageUrl { get; set; }
         public int EquipmentCount { get; set; }
         public int ActiveBookings { get; set; }
     }
@@ -62,19 +59,13 @@ namespace Application.DTOs.Room
     public class CreateRoomRequest
     {
         public string Name { get; set; } = null!;
-        public string Description { get; set; } = null!;
-        public string Location { get; set; } = null!;
         public int Capacity { get; set; }
-        public string? ImageUrl { get; set; }
     }
 
     public class UpdateRoomRequest
     {
         public string? Name { get; set; }
-        public string? Description { get; set; }
-        public string? Location { get; set; }
         public int? Capacity { get; set; }
-        public string? ImageUrl { get; set; }
     }
 
     public class UpdateRoomStatusRequest
@@ -85,7 +76,6 @@ namespace Application.DTOs.Room
     public class RoomFilterRequest
     {
         public string? Name { get; set; }
-        public string? Location { get; set; }
         public RoomStatus? Status { get; set; }
         public int? MinCapacity { get; set; }
         public int? MaxCapacity { get; set; }

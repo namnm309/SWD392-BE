@@ -27,9 +27,6 @@ namespace Application.Services.Room
                 if (!string.IsNullOrEmpty(filter.Name))
                     query = query.Where(r => r.Name.Contains(filter.Name));
                 
-                if (!string.IsNullOrEmpty(filter.Location))
-                    query = query.Where(r => r.Location.Contains(filter.Location));
-                
                 if (filter.Status.HasValue)
                     query = query.Where(r => r.Status == filter.Status.Value);
                 
@@ -54,11 +51,8 @@ namespace Application.Services.Room
             {
                 Id = r.Id,
                 Name = r.Name,
-                Description = r.Description,
-                Location = r.Location,
                 Capacity = r.Capacity,
                 Status = r.Status.ToString(),
-                ImageUrl = r.ImageUrl,
                 EquipmentCount = r.Equipments.Count,
                 ActiveBookings = r.Bookings.Count(b => b.StartTime <= DateTime.UtcNow && b.EndTime >= DateTime.UtcNow)
             }).ToList();
@@ -119,11 +113,8 @@ namespace Application.Services.Room
             {
                 Id = room.Id,
                 Name = room.Name,
-                Description = room.Description,
-                Location = room.Location,
                 Capacity = room.Capacity,
                 Status = room.Status.ToString(),
-                ImageUrl = room.ImageUrl,
                 EquipmentCount = room.Equipments.Count,
                 ActiveBookings = room.Bookings.Count(b => b.StartTime <= DateTime.UtcNow && b.EndTime >= DateTime.UtcNow),
                 CreatedAt = room.CreatedAt,
@@ -155,10 +146,7 @@ namespace Application.Services.Room
             {
                 Id = Guid.NewGuid(),
                 Name = request.Name,
-                Description = request.Description,
-                Location = request.Location,
                 Capacity = request.Capacity,
-                ImageUrl = request.ImageUrl,
                 Status = RoomStatus.Available,
                 CreatedAt = DateTime.UtcNow,
                 LastUpdatedAt = DateTime.UtcNow
@@ -179,17 +167,8 @@ namespace Application.Services.Room
             if (!string.IsNullOrWhiteSpace(request.Name))
                 room.Name = request.Name;
             
-            if (!string.IsNullOrWhiteSpace(request.Description))
-                room.Description = request.Description;
-            
-            if (!string.IsNullOrWhiteSpace(request.Location))
-                room.Location = request.Location;
-            
             if (request.Capacity.HasValue)
                 room.Capacity = request.Capacity.Value;
-            
-            if (request.ImageUrl != null)
-                room.ImageUrl = request.ImageUrl;
 
             room.LastUpdatedAt = DateTime.UtcNow;
             _db.Rooms.Update(room);
@@ -251,11 +230,8 @@ namespace Application.Services.Room
             {
                 Id = r.Id,
                 Name = r.Name,
-                Description = r.Description,
-                Location = r.Location,
                 Capacity = r.Capacity,
                 Status = r.Status.ToString(),
-                ImageUrl = r.ImageUrl,
                 EquipmentCount = r.Equipments.Count,
                 ActiveBookings = 0
             }).ToList();

@@ -10,11 +10,7 @@ namespace DomainLayer.Entities
 	{
 		public string Name { get; set; } = null!;
 
-		public string? Description { get; set; }
-
 		public string? Location { get; set; }
-
-		public int Capacity { get; set; }
 
 		public LabStatus Status { get; set; } = LabStatus.Active;
 

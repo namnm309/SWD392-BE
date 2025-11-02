@@ -207,7 +207,7 @@ namespace InfrastructureLayer.Data
                 .HasIndex(r => new { r.Type, r.Status, r.ReportedDate });
 
             modelBuilder.Entity<Room>()
-                .HasIndex(r => new { r.Name, r.Location, r.Status });
+                .HasIndex(r => new { r.Name, r.Status });
 
             modelBuilder.Entity<Equipment>()
                 .HasIndex(e => e.SerialNumber)

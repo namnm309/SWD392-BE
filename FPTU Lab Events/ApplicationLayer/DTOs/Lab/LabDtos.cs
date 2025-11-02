@@ -7,9 +7,7 @@ namespace Application.DTOs.Lab
     {
         public Guid Id { get; set; }
         public string Name { get; set; } = null!;
-        public string? Description { get; set; }
         public string? Location { get; set; }
-        public int Capacity { get; set; }
         public string Status { get; set; } = null!;
         public Guid? RoomId { get; set; }
         public string? RoomName { get; set; }
@@ -62,8 +60,6 @@ namespace Application.DTOs.Lab
     {
         public Guid Id { get; set; }
         public string Name { get; set; } = null!;
-        public string Description { get; set; } = null!;
-        public string Location { get; set; } = null!;
         public int Capacity { get; set; }
         public string Status { get; set; } = null!;
     }
@@ -71,9 +67,7 @@ namespace Application.DTOs.Lab
     public class CreateLabRequest
     {
         public string Name { get; set; } = null!;
-        public string? Description { get; set; }
         public string? Location { get; set; }
-        public int Capacity { get; set; }
         public Guid? RoomId { get; set; }
         public LabStatus Status { get; set; } = LabStatus.Active;
     }
@@ -81,9 +75,7 @@ namespace Application.DTOs.Lab
     public class UpdateLabRequest
     {
         public string? Name { get; set; }
-        public string? Description { get; set; }
         public string? Location { get; set; }
-        public int? Capacity { get; set; }
         public Guid? RoomId { get; set; }
         public LabStatus? Status { get; set; }
     }
@@ -98,8 +90,6 @@ namespace Application.DTOs.Lab
         public string? Name { get; set; }
         public string? Location { get; set; }
         public LabStatus? Status { get; set; }
-        public int? MinCapacity { get; set; }
-        public int? MaxCapacity { get; set; }
         public int? Page { get; set; }
         public int? PageSize { get; set; }
     }
