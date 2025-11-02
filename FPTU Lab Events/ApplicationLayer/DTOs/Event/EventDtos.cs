@@ -16,6 +16,8 @@ namespace Application.DTOs.Event
         public string CreatedBy { get; set; } = null!;
         public int BookingCount { get; set; }
         public bool IsUpcoming { get; set; }
+        public int Capacity { get; set; }
+        public string? ImageUrl { get; set; }
     }
 
     public class EventDetail : EventListItem
@@ -63,6 +65,8 @@ namespace Application.DTOs.Event
         public EventStatus Status { get; set; } = EventStatus.Active;
         public bool Visibility { get; set; } = true;
         public string? RecurrenceRule { get; set; }
+        public int Capacity { get; set; }
+        public string? ImageUrl { get; set; }
         
         // Room & RoomSlot selection
         public Guid? RoomId { get; set; } // Optional: Chọn phòng
@@ -79,6 +83,8 @@ namespace Application.DTOs.Event
         public EventStatus? Status { get; set; }
         public bool? Visibility { get; set; }
         public string? RecurrenceRule { get; set; }
+        public int? Capacity { get; set; }
+        public string? ImageUrl { get; set; }
     }
 
     public class EventFilterRequest

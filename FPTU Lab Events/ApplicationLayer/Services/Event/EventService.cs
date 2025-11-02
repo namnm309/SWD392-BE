@@ -66,7 +66,9 @@ namespace Application.Services.Event
                 Visibility = e.Visibility,
                 CreatedBy = e.CreatedByUser.Fullname,
                 BookingCount = e.Bookings.Count,
-                IsUpcoming = e.StartDate > DateTime.UtcNow
+                IsUpcoming = e.StartDate > DateTime.UtcNow,
+                Capacity = e.Capacity,
+                ImageUrl = e.ImageUrl
             }).ToList();
         }
 
@@ -129,7 +131,9 @@ namespace Application.Services.Event
                 Bookings = bookings,
                 RoomId = firstSlot?.RoomId,
                 RoomName = firstSlot?.Room.Name,
-                RoomSlots = roomSlots
+                RoomSlots = roomSlots,
+                Capacity = eventEntity.Capacity,
+                ImageUrl = eventEntity.ImageUrl
             };
         }
 
@@ -219,6 +223,8 @@ namespace Application.Services.Event
                 Status = request.Status,
                 Visibility = request.Visibility,
                 RecurrenceRule = request.RecurrenceRule,
+                Capacity = request.Capacity,
+                ImageUrl = request.ImageUrl,
                 CreatedBy = adminId,
                 CreatedAt = DateTime.UtcNow,
                 LastUpdatedAt = DateTime.UtcNow
@@ -328,6 +334,18 @@ namespace Application.Services.Event
             {
                 changes.Add($"RecurrenceRule: '{eventEntity.RecurrenceRule}' -> '{request.RecurrenceRule}'");
                 eventEntity.RecurrenceRule = request.RecurrenceRule;
+            }
+
+            if (request.Capacity.HasValue && request.Capacity.Value != eventEntity.Capacity)
+            {
+                changes.Add($"Capacity: {eventEntity.Capacity} -> {request.Capacity.Value}");
+                eventEntity.Capacity = request.Capacity.Value;
+            }
+
+            if (request.ImageUrl != null && request.ImageUrl != eventEntity.ImageUrl)
+            {
+                changes.Add($"ImageUrl: '{eventEntity.ImageUrl}' -> '{request.ImageUrl}'");
+                eventEntity.ImageUrl = request.ImageUrl;
             }
 
             // Validate End Date is after Start Date

@@ -33,12 +33,6 @@ namespace Application.Services.Lab
                 
                 if (filter.Status.HasValue)
                     query = query.Where(l => l.Status == filter.Status.Value);
-                
-                if (filter.MinCapacity.HasValue)
-                    query = query.Where(l => l.Capacity >= filter.MinCapacity.Value);
-                
-                if (filter.MaxCapacity.HasValue)
-                    query = query.Where(l => l.Capacity <= filter.MaxCapacity.Value);
             }
 
             query = query.OrderBy(l => l.Name);
@@ -55,9 +49,7 @@ namespace Application.Services.Lab
             {
                 Id = l.Id,
                 Name = l.Name,
-                Description = l.Description,
                 Location = l.Location,
-                Capacity = l.Capacity,
                 Status = l.Status.ToString(),
                 RoomId = l.RoomId,
                 RoomName = l.Room?.Name,
@@ -108,8 +100,6 @@ namespace Application.Services.Lab
             {
                 Id = lab.Room.Id,
                 Name = lab.Room.Name,
-                Description = lab.Room.Description,
-                Location = lab.Room.Location,
                 Capacity = lab.Room.Capacity,
                 Status = lab.Room.Status.ToString()
             } : null;
@@ -118,9 +108,7 @@ namespace Application.Services.Lab
             {
                 Id = lab.Id,
                 Name = lab.Name,
-                Description = lab.Description,
                 Location = lab.Location,
-                Capacity = lab.Capacity,
                 Status = lab.Status.ToString(),
                 RoomId = lab.RoomId,
                 RoomName = lab.Room?.Name,
@@ -141,9 +129,6 @@ namespace Application.Services.Lab
             // Validation - AC-02: Required fields cannot be null
             if (string.IsNullOrWhiteSpace(request.Name))
                 throw new Exception("Lab Name is required");
-            
-            if (request.Capacity <= 0)
-                throw new Exception("Capacity must be greater than 0");
 
             // Check if room exists if provided
             if (request.RoomId.HasValue)
@@ -162,9 +147,7 @@ namespace Application.Services.Lab
             {
                 Id = Guid.NewGuid(),
                 Name = request.Name,
-                Description = request.Description,
                 Location = request.Location,
-                Capacity = request.Capacity,
                 RoomId = request.RoomId,
                 Status = request.Status,
                 CreatedAt = DateTime.UtcNow,
@@ -187,7 +170,7 @@ namespace Application.Services.Lab
                 ?? throw new Exception("Lab not found");
 
             var changes = new List<string>();
-            var originalLab = new { lab.Name, lab.Description, lab.Location, lab.Capacity, lab.RoomId, lab.Status };
+            var originalLab = new { lab.Name, lab.Location, lab.RoomId, lab.Status };
 
             // Validation - AC-02: Required fields cannot be null
             if (!string.IsNullOrWhiteSpace(request.Name) && request.Name != lab.Name)
@@ -204,25 +187,10 @@ namespace Application.Services.Lab
                 lab.Name = request.Name;
             }
             
-            if (request.Description != null && request.Description != lab.Description)
-            {
-                changes.Add($"Description: '{lab.Description}' -> '{request.Description}'");
-                lab.Description = request.Description;
-            }
-            
             if (request.Location != null && request.Location != lab.Location)
             {
                 changes.Add($"Location: '{lab.Location}' -> '{request.Location}'");
                 lab.Location = request.Location;
-            }
-            
-            if (request.Capacity.HasValue && request.Capacity.Value != lab.Capacity)
-            {
-                if (request.Capacity.Value <= 0)
-                    throw new Exception("Capacity must be greater than 0");
-                
-                changes.Add($"Capacity: {lab.Capacity} -> {request.Capacity.Value}");
-                lab.Capacity = request.Capacity.Value;
             }
 
             if (request.RoomId != lab.RoomId)
@@ -313,9 +281,7 @@ namespace Application.Services.Lab
             {
                 Id = l.Id,
                 Name = l.Name,
-                Description = l.Description,
                 Location = l.Location,
-                Capacity = l.Capacity,
                 Status = l.Status.ToString(),
                 RoomId = l.RoomId,
                 RoomName = l.Room?.Name,
