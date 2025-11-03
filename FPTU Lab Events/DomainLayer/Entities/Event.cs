@@ -14,15 +14,11 @@ namespace DomainLayer.Entities
 
 		public DateTime StartDate { get; set; }
 
-		public DateTime EndDate { get; set; }
+	public DateTime EndDate { get; set; }
 
-		public string? Location { get; set; }
+	public EventStatus Status { get; set; } = EventStatus.Active;
 
-		public EventStatus Status { get; set; } = EventStatus.Active;
-
-		public bool Visibility { get; set; } = true;
-
-	public string? RecurrenceRule { get; set; }
+	public bool Visibility { get; set; } = true;
 
 	public int Capacity { get; set; }
 

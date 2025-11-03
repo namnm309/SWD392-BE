@@ -142,7 +142,6 @@ namespace ControllerLayer.Controllers
                 Console.WriteLine($"Title: {request.Title}");
                 Console.WriteLine($"StartDate: {request.StartDate}");
                 Console.WriteLine($"EndDate: {request.EndDate}");
-                Console.WriteLine($"Location: {request.Location}");
                 
                 var adminId = GetCurrentUserId();
                 Console.WriteLine($"Admin ID: {adminId}");

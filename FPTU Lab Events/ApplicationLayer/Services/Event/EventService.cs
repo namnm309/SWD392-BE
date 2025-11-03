@@ -27,9 +27,6 @@ namespace Application.Services.Event
                 if (!string.IsNullOrEmpty(filter.Title))
                     query = query.Where(e => e.Title.Contains(filter.Title));
                 
-                if (!string.IsNullOrEmpty(filter.Location))
-                    query = query.Where(e => e.Location != null && e.Location.Contains(filter.Location));
-                
                 if (filter.Status.HasValue)
                     query = query.Where(e => e.Status == filter.Status.Value);
                 
@@ -61,7 +58,6 @@ namespace Application.Services.Event
                 Description = e.Description,
                 StartDate = e.StartDate,
                 EndDate = e.EndDate,
-                Location = e.Location,
                 Status = e.Status.ToString(),
                 Visibility = e.Visibility,
                 CreatedBy = e.CreatedByUser.Fullname,
@@ -119,7 +115,6 @@ namespace Application.Services.Event
                 Description = eventEntity.Description,
                 StartDate = eventEntity.StartDate,
                 EndDate = eventEntity.EndDate,
-                Location = eventEntity.Location,
                 Status = eventEntity.Status.ToString(),
                 Visibility = eventEntity.Visibility,
                 CreatedBy = eventEntity.CreatedByUser.Fullname,
@@ -127,7 +122,6 @@ namespace Application.Services.Event
                 IsUpcoming = eventEntity.StartDate > DateTime.UtcNow,
                 CreatedAt = eventEntity.CreatedAt,
                 LastUpdatedAt = eventEntity.LastUpdatedAt,
-                RecurrenceRule = eventEntity.RecurrenceRule,
                 Bookings = bookings,
                 RoomId = firstSlot?.RoomId,
                 RoomName = firstSlot?.Room.Name,
@@ -219,10 +213,8 @@ namespace Application.Services.Event
                 Description = request.Description,
                 StartDate = request.StartDate,
                 EndDate = request.EndDate,
-                Location = request.Location,
                 Status = request.Status,
                 Visibility = request.Visibility,
-                RecurrenceRule = request.RecurrenceRule,
                 Capacity = request.Capacity,
                 ImageUrl = request.ImageUrl,
                 CreatedBy = adminId,
@@ -312,12 +304,6 @@ namespace Application.Services.Event
                 eventEntity.EndDate = request.EndDate.Value;
             }
 
-            if (request.Location != null && request.Location != eventEntity.Location)
-            {
-                changes.Add($"Location: '{eventEntity.Location}' -> '{request.Location}'");
-                eventEntity.Location = request.Location;
-            }
-
             if (request.Status.HasValue && request.Status.Value != eventEntity.Status)
             {
                 changes.Add($"Status: {eventEntity.Status} -> {request.Status.Value}");
@@ -328,12 +314,6 @@ namespace Application.Services.Event
             {
                 changes.Add($"Visibility: {eventEntity.Visibility} -> {request.Visibility.Value}");
                 eventEntity.Visibility = request.Visibility.Value;
-            }
-
-            if (request.RecurrenceRule != null && request.RecurrenceRule != eventEntity.RecurrenceRule)
-            {
-                changes.Add($"RecurrenceRule: '{eventEntity.RecurrenceRule}' -> '{request.RecurrenceRule}'");
-                eventEntity.RecurrenceRule = request.RecurrenceRule;
             }
 
             if (request.Capacity.HasValue && request.Capacity.Value != eventEntity.Capacity)
@@ -416,12 +396,13 @@ namespace Application.Services.Event
                 Description = e.Description,
                 StartDate = e.StartDate,
                 EndDate = e.EndDate,
-                Location = e.Location,
                 Status = e.Status.ToString(),
                 Visibility = e.Visibility,
                 CreatedBy = e.CreatedByUser.Fullname,
                 BookingCount = e.Bookings.Count,
-                IsUpcoming = true
+                IsUpcoming = true,
+                Capacity = e.Capacity,
+                ImageUrl = e.ImageUrl
             }).ToList();
         }
 
@@ -441,12 +422,13 @@ namespace Application.Services.Event
                 Description = e.Description,
                 StartDate = e.StartDate,
                 EndDate = e.EndDate,
-                Location = e.Location,
                 Status = e.Status.ToString(),
                 Visibility = e.Visibility,
                 CreatedBy = e.CreatedByUser.Fullname,
                 BookingCount = e.Bookings.Count,
-                IsUpcoming = e.StartDate > DateTime.UtcNow
+                IsUpcoming = e.StartDate > DateTime.UtcNow,
+                Capacity = e.Capacity,
+                ImageUrl = e.ImageUrl
             }).ToList();
         }
 

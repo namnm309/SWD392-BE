@@ -111,6 +111,10 @@ namespace ControllerLayer
 			builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
 			{
 				var connectionString = builder.Configuration["Redis:ConnectionString"];
+				if (string.IsNullOrEmpty(connectionString))
+				{
+					throw new Exception("Redis connection string is not configured");
+				}
 				return ConnectionMultiplexer.Connect(connectionString);
 			});
 			builder.Services.AddScoped<IRedisService, RedisService>();
