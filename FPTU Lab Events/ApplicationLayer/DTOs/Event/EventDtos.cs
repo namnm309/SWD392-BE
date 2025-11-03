@@ -10,7 +10,6 @@ namespace Application.DTOs.Event
         public string? Description { get; set; }
         public DateTime StartDate { get; set; }
         public DateTime EndDate { get; set; }
-        public string? Location { get; set; }
         public string Status { get; set; } = null!;
         public bool Visibility { get; set; }
         public string CreatedBy { get; set; } = null!;
@@ -24,7 +23,6 @@ namespace Application.DTOs.Event
     {
         public DateTime CreatedAt { get; set; }
         public DateTime LastUpdatedAt { get; set; }
-        public string? RecurrenceRule { get; set; }
         public List<BookingInfo> Bookings { get; set; } = new List<BookingInfo>();
         public Guid? RoomId { get; set; }
         public string? RoomName { get; set; }
@@ -61,10 +59,8 @@ namespace Application.DTOs.Event
         public string? Description { get; set; }
         public DateTime StartDate { get; set; }
         public DateTime EndDate { get; set; }
-        public string? Location { get; set; }
         public EventStatus Status { get; set; } = EventStatus.Active;
         public bool Visibility { get; set; } = true;
-        public string? RecurrenceRule { get; set; }
         public int Capacity { get; set; }
         public string? ImageUrl { get; set; }
         
@@ -79,10 +75,8 @@ namespace Application.DTOs.Event
         public string? Description { get; set; }
         public DateTime? StartDate { get; set; }
         public DateTime? EndDate { get; set; }
-        public string? Location { get; set; }
         public EventStatus? Status { get; set; }
         public bool? Visibility { get; set; }
-        public string? RecurrenceRule { get; set; }
         public int? Capacity { get; set; }
         public string? ImageUrl { get; set; }
     }
@@ -90,7 +84,6 @@ namespace Application.DTOs.Event
     public class EventFilterRequest
     {
         public string? Title { get; set; }
-        public string? Location { get; set; }
         public EventStatus? Status { get; set; }
         public DateTime? StartDateFrom { get; set; }
         public DateTime? StartDateTo { get; set; }
