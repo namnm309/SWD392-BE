@@ -13,6 +13,11 @@ namespace DomainLayer.Entities
         public int Capacity { get; set; }
         
         public RoomStatus Status { get; set; } = RoomStatus.Available;
+
+        public Guid? LabId { get; set; }
+
+        [ForeignKey(nameof(LabId))]
+        public Lab? Lab { get; set; }
         
         public ICollection<Booking> Bookings { get; set; } = new List<Booking>();
         

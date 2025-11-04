@@ -154,11 +154,11 @@ namespace InfrastructureLayer.Data
                 .HasForeignKey(m => m.LabId)
                 .OnDelete(DeleteBehavior.Cascade);
 
-            // Lab & Room
-            modelBuilder.Entity<Lab>()
-                .HasOne(l => l.Room)
-                .WithMany()
-                .HasForeignKey(l => l.RoomId)
+            // Lab & Room (One-to-Many: One Lab can have many Rooms)
+            modelBuilder.Entity<Room>()
+                .HasOne(r => r.Lab)
+                .WithMany(l => l.Rooms)
+                .HasForeignKey(r => r.LabId)
                 .OnDelete(DeleteBehavior.SetNull);
 
             // Event & User (CreatedBy)

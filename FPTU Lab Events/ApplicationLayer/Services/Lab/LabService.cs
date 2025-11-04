@@ -20,7 +20,7 @@ namespace Application.Services.Lab
             var query = _db.Labs
                 .Include(l => l.Members)
                     .ThenInclude(m => m.User)
-                .Include(l => l.Room)
+                .Include(l => l.Rooms)
                 .AsQueryable();
 
             if (filter != null)
@@ -51,8 +51,7 @@ namespace Application.Services.Lab
                 Name = l.Name,
                 Location = l.Location,
                 Status = l.Status.ToString(),
-                RoomId = l.RoomId,
-                RoomName = l.Room?.Name,
+                RoomCount = l.Rooms.Count,
                 MemberCount = l.Members.Count(m => m.Status == LabMemberStatus.Active),
                 EquipmentCount = 0, // Will be calculated separately if needed
                 ActiveBookings = 0 // Will be calculated separately if needed
@@ -64,19 +63,23 @@ namespace Application.Services.Lab
             var lab = await _db.Labs
                 .Include(l => l.Members.Where(m => m.Status == LabMemberStatus.Active))
                     .ThenInclude(m => m.User)
-                .Include(l => l.Room)
+                .Include(l => l.Rooms)
                 .FirstOrDefaultAsync(l => l.Id == id)
                 ?? throw new Exception("Lab not found");
 
-            // Get equipment count for this lab (if equipment is linked to lab)
-            var equipmentCount = await _db.Equipments
-                .CountAsync(e => e.RoomId == null); // Assuming equipment can be lab-level
+            // Get equipment count for this lab (sum of equipment in all rooms)
+            var roomIds = lab.Rooms.Select(r => r.Id).ToList();
+            var equipmentCount = roomIds.Any() 
+                ? await _db.Equipments.CountAsync(e => e.RoomId.HasValue && roomIds.Contains(e.RoomId.Value))
+                : 0;
 
-            // Get active bookings for this lab (if bookings are linked to lab)
-            var activeBookings = await _db.Bookings
-                .CountAsync(b => b.Status == BookingStatus.Approved && 
+            // Get active bookings for this lab (sum of bookings in all rooms)
+            var activeBookings = roomIds.Any()
+                ? await _db.Bookings.CountAsync(b => roomIds.Contains(b.RoomId) && 
+                                b.Status == BookingStatus.Approved && 
                                 b.StartTime <= DateTime.UtcNow && 
-                                b.EndTime >= DateTime.UtcNow);
+                                b.EndTime >= DateTime.UtcNow)
+                : 0;
 
             var members = lab.Members.Select(m => new LabMemberInfo
             {
@@ -95,14 +98,14 @@ namespace Application.Services.Lab
             // Get recent bookings (if any)
             var recentBookings = new List<BookingInfo>();
 
-            // Get room info
-            var roomInfo = lab.Room != null ? new RoomInfo
+            // Get all rooms for this lab
+            var rooms = lab.Rooms.Select(r => new RoomInfo
             {
-                Id = lab.Room.Id,
-                Name = lab.Room.Name,
-                Capacity = lab.Room.Capacity,
-                Status = lab.Room.Status.ToString()
-            } : null;
+                Id = r.Id,
+                Name = r.Name,
+                Capacity = r.Capacity,
+                Status = r.Status.ToString()
+            }).ToList();
 
             return new LabDetail
             {
@@ -110,14 +113,13 @@ namespace Application.Services.Lab
                 Name = lab.Name,
                 Location = lab.Location,
                 Status = lab.Status.ToString(),
-                RoomId = lab.RoomId,
-                RoomName = lab.Room?.Name,
+                RoomCount = lab.Rooms.Count,
                 MemberCount = lab.Members.Count,
                 EquipmentCount = equipmentCount,
                 ActiveBookings = activeBookings,
                 CreatedAt = lab.CreatedAt,
                 LastUpdatedAt = lab.LastUpdatedAt,
-                Room = roomInfo,
+                Rooms = rooms,
                 Members = members,
                 Equipments = equipments,
                 RecentBookings = recentBookings
@@ -130,14 +132,6 @@ namespace Application.Services.Lab
             if (string.IsNullOrWhiteSpace(request.Name))
                 throw new Exception("Lab Name is required");
 
-            // Check if room exists if provided
-            if (request.RoomId.HasValue)
-            {
-                var roomExists = await _db.Rooms.AnyAsync(r => r.Id == request.RoomId.Value);
-                if (!roomExists)
-                    throw new Exception("Room not found");
-            }
-
             // Check if lab name already exists
             var existingLab = await _db.Labs.AnyAsync(l => l.Name == request.Name);
             if (existingLab)
@@ -148,17 +142,53 @@ namespace Application.Services.Lab
                 Id = Guid.NewGuid(),
                 Name = request.Name,
                 Location = request.Location,
-                RoomId = request.RoomId,
                 Status = request.Status,
                 CreatedAt = DateTime.UtcNow,
                 LastUpdatedAt = DateTime.UtcNow
             };
 
             _db.Labs.Add(lab);
+            
+            // Assign rooms to lab if provided
+            if (request.RoomIds != null && request.RoomIds.Any())
+            {
+                // Validate all rooms exist
+                var rooms = await _db.Rooms
+                    .Where(r => request.RoomIds.Contains(r.Id))
+                    .ToListAsync();
+                
+                if (rooms.Count != request.RoomIds.Count)
+                {
+                    var foundIds = rooms.Select(r => r.Id).ToList();
+                    var notFoundIds = request.RoomIds.Except(foundIds).ToList();
+                    throw new Exception($"One or more rooms not found. Room IDs not found: {string.Join(", ", notFoundIds)}");
+                }
+                
+                // Check if any room is already assigned to another lab
+                var alreadyAssignedRooms = rooms.Where(r => r.LabId.HasValue && r.LabId != lab.Id).ToList();
+                if (alreadyAssignedRooms.Any())
+                {
+                    var assignedNames = string.Join(", ", alreadyAssignedRooms.Select(r => r.Name));
+                    throw new Exception($"One or more rooms are already assigned to another lab. Rooms: {assignedNames}");
+                }
+                
+                // Assign rooms to this lab
+                foreach (var room in rooms)
+                {
+                    room.LabId = lab.Id;
+                    room.LastUpdatedAt = DateTime.UtcNow;
+                }
+                
+                _db.Rooms.UpdateRange(rooms);
+            }
+            
             await _db.SaveChangesAsync();
 
             // Log creation event - AC-05
-            await LogLabActionAsync(adminId, lab.Id, lab.Name, "Create", null);
+            var roomInfo = request.RoomIds != null && request.RoomIds.Any() 
+                ? $"Rooms assigned: {string.Join(", ", request.RoomIds)}" 
+                : null;
+            await LogLabActionAsync(adminId, lab.Id, lab.Name, "Create", roomInfo);
 
             return await GetLabByIdAsync(lab.Id);
         }
@@ -166,11 +196,12 @@ namespace Application.Services.Lab
         public async Task<LabDetail> UpdateLabAsync(Guid id, UpdateLabRequest request, Guid adminId)
         {
             var lab = await _db.Labs
+                .Include(l => l.Rooms)
                 .FirstOrDefaultAsync(l => l.Id == id)
                 ?? throw new Exception("Lab not found");
 
             var changes = new List<string>();
-            var originalLab = new { lab.Name, lab.Location, lab.RoomId, lab.Status };
+            var originalLab = new { lab.Name, lab.Location, lab.Status };
 
             // Validation - AC-02: Required fields cannot be null
             if (!string.IsNullOrWhiteSpace(request.Name) && request.Name != lab.Name)
@@ -193,23 +224,59 @@ namespace Application.Services.Lab
                 lab.Location = request.Location;
             }
 
-            if (request.RoomId != lab.RoomId)
-            {
-                if (request.RoomId.HasValue)
-                {
-                    var roomExists = await _db.Rooms.AnyAsync(r => r.Id == request.RoomId.Value);
-                    if (!roomExists)
-                        throw new Exception("Room not found");
-                }
-                
-                changes.Add($"RoomId: {lab.RoomId} -> {request.RoomId}");
-                lab.RoomId = request.RoomId;
-            }
-
             if (request.Status.HasValue && request.Status.Value != lab.Status)
             {
                 changes.Add($"Status: {lab.Status} -> {request.Status.Value}");
                 lab.Status = request.Status.Value;
+            }
+
+            // Update rooms if provided
+            if (request.RoomIds != null)
+            {
+                var currentRoomIds = lab.Rooms.Select(r => r.Id).OrderBy(x => x).ToList();
+                var newRoomIds = request.RoomIds.OrderBy(x => x).ToList();
+                
+                if (!currentRoomIds.SequenceEqual(newRoomIds))
+                {
+                    // Validate all rooms exist
+                    var rooms = await _db.Rooms
+                        .Where(r => request.RoomIds.Contains(r.Id))
+                        .ToListAsync();
+                    
+                    if (rooms.Count != request.RoomIds.Count)
+                    {
+                        var foundIds = rooms.Select(r => r.Id).ToList();
+                        var notFoundIds = request.RoomIds.Except(foundIds).ToList();
+                        throw new Exception($"One or more rooms not found. Room IDs not found: {string.Join(", ", notFoundIds)}");
+                    }
+                    
+                    // Check if any room is already assigned to another lab
+                    var alreadyAssignedRooms = rooms.Where(r => r.LabId.HasValue && r.LabId != lab.Id).ToList();
+                    if (alreadyAssignedRooms.Any())
+                    {
+                        var assignedNames = string.Join(", ", alreadyAssignedRooms.Select(r => r.Name));
+                        throw new Exception($"One or more rooms are already assigned to another lab. Rooms: {assignedNames}");
+                    }
+                    
+                    // Remove current rooms from this lab
+                    foreach (var room in lab.Rooms.ToList())
+                    {
+                        room.LabId = null;
+                        room.LastUpdatedAt = DateTime.UtcNow;
+                    }
+                    
+                    // Assign new rooms to this lab
+                    foreach (var room in rooms)
+                    {
+                        room.LabId = lab.Id;
+                        room.LastUpdatedAt = DateTime.UtcNow;
+                    }
+                    
+                    _db.Rooms.UpdateRange(lab.Rooms);
+                    _db.Rooms.UpdateRange(rooms);
+                    
+                    changes.Add($"Rooms: [{string.Join(", ", currentRoomIds)}] -> [{string.Join(", ", newRoomIds)}]");
+                }
             }
 
             lab.LastUpdatedAt = DateTime.UtcNow;
@@ -240,12 +307,14 @@ namespace Application.Services.Lab
         public async Task DeleteLabAsync(Guid id, DeleteLabRequest request, Guid adminId)
         {
             var lab = await _db.Labs
+                .Include(l => l.Rooms)
                 .FirstOrDefaultAsync(l => l.Id == id)
                 ?? throw new Exception("Lab not found");
 
-            // AC-01: Check if lab has pending or approved bookings
+            // AC-01: Check if lab has pending or approved bookings in any of its rooms
+            var roomIds = lab.Rooms.Select(r => r.Id).ToList();
             var hasActiveBookings = await _db.Bookings
-                .AnyAsync(b => b.RoomId == lab.RoomId && 
+                .AnyAsync(b => roomIds.Contains(b.RoomId) && 
                               (b.Status == BookingStatus.Pending || b.Status == BookingStatus.Approved));
 
             if (hasActiveBookings)
@@ -273,7 +342,7 @@ namespace Application.Services.Lab
         {
             var labs = await _db.Labs
                 .Include(l => l.Members)
-                .Include(l => l.Room)
+                .Include(l => l.Rooms)
                 .Where(l => l.Status == LabStatus.Active)
                 .ToListAsync();
 
@@ -283,8 +352,7 @@ namespace Application.Services.Lab
                 Name = l.Name,
                 Location = l.Location,
                 Status = l.Status.ToString(),
-                RoomId = l.RoomId,
-                RoomName = l.Room?.Name,
+                RoomCount = l.Rooms.Count,
                 MemberCount = l.Members.Count(m => m.Status == LabMemberStatus.Active),
                 EquipmentCount = 0,
                 ActiveBookings = 0
