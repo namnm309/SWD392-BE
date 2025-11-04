@@ -83,6 +83,7 @@ namespace Application.DTOs.Room
         public RoomStatus? Status { get; set; }
         public int? MinCapacity { get; set; }
         public int? MaxCapacity { get; set; }
+        public Guid? LabId { get; set; } // Filter rooms by lab
         public int? Page { get; set; }
         public int? PageSize { get; set; }
     }

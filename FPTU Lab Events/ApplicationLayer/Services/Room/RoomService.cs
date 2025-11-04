@@ -35,6 +35,9 @@ namespace Application.Services.Room
                 
                 if (filter.MaxCapacity.HasValue)
                     query = query.Where(r => r.Capacity <= filter.MaxCapacity.Value);
+
+                if (filter.LabId.HasValue)
+                    query = query.Where(r => r.LabId == filter.LabId.Value);
             }
 
             query = query.OrderBy(r => r.Name);

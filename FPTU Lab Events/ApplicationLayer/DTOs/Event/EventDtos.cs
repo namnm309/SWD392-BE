@@ -24,6 +24,8 @@ namespace Application.DTOs.Event
         public DateTime CreatedAt { get; set; }
         public DateTime LastUpdatedAt { get; set; }
         public List<BookingInfo> Bookings { get; set; } = new List<BookingInfo>();
+        public Guid? LabId { get; set; }
+        public string? LabName { get; set; }
         public Guid? RoomId { get; set; }
         public string? RoomName { get; set; }
         public List<EventRoomSlotInfo> RoomSlots { get; set; } = new List<EventRoomSlotInfo>();
@@ -64,9 +66,10 @@ namespace Application.DTOs.Event
         public int Capacity { get; set; }
         public string? ImageUrl { get; set; }
         
-        // Room & RoomSlot selection
-        public Guid? RoomId { get; set; } // Optional: Chọn phòng
-        public List<Guid>? RoomSlotIds { get; set; } // Optional: Chọn các slot trong phòng
+        // Lab, Room & RoomSlot selection (cascade: Lab -> Room -> RoomSlot)
+        public Guid? LabId { get; set; } // Optional: Chọn lab trước
+        public Guid? RoomId { get; set; } // Optional: Chọn phòng (phải thuộc lab nếu có LabId)
+        public List<Guid>? RoomSlotIds { get; set; } // Optional: Chọn các slot trong phòng (phải thuộc room nếu có RoomId)
     }
 
     public class UpdateEventRequest
