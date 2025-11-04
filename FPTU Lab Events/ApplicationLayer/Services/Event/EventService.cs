@@ -78,6 +78,7 @@ namespace Application.Services.Event
                     .ThenInclude(b => b.Room)
                 .Include(e => e.RoomSlots)
                     .ThenInclude(rs => rs.Room)
+                        .ThenInclude(r => r.Lab)
                 .FirstOrDefaultAsync(e => e.Id == id)
                 ?? throw new Exception("Event not found");
 
@@ -105,8 +106,10 @@ namespace Application.Services.Event
                 Status = rs.Status
             }).ToList();
 
-            // Determine RoomId from first RoomSlot
+            // Determine RoomId and LabId from first RoomSlot
             var firstSlot = eventEntity.RoomSlots.FirstOrDefault();
+            var labId = firstSlot?.Room?.LabId;
+            var labName = firstSlot?.Room?.Lab?.Name;
 
             return new EventDetail
             {
@@ -123,6 +126,8 @@ namespace Application.Services.Event
                 CreatedAt = eventEntity.CreatedAt,
                 LastUpdatedAt = eventEntity.LastUpdatedAt,
                 Bookings = bookings,
+                LabId = labId,
+                LabName = labName,
                 RoomId = firstSlot?.RoomId,
                 RoomName = firstSlot?.Room.Name,
                 RoomSlots = roomSlots,
@@ -168,20 +173,38 @@ namespace Application.Services.Event
             if (existingEvent)
                 throw new Exception("Event with this title already exists on the same date");
 
+            // Validate Lab if provided
+            DomainLayer.Entities.Lab? lab = null;
+            if (request.LabId.HasValue)
+            {
+                lab = await _db.Labs
+                    .FirstOrDefaultAsync(l => l.Id == request.LabId.Value);
+                if (lab == null)
+                    throw new Exception($"Lab not found with ID: {request.LabId.Value}");
+            }
+
             // Validate Room if provided
+            DomainLayer.Entities.Room? room = null;
             if (request.RoomId.HasValue)
             {
-                var roomExists = await _db.Rooms.AnyAsync(r => r.Id == request.RoomId.Value);
-                if (!roomExists)
+                room = await _db.Rooms
+                    .Include(r => r.Lab)
+                    .FirstOrDefaultAsync(r => r.Id == request.RoomId.Value);
+                if (room == null)
                     throw new Exception($"Room not found with ID: {request.RoomId.Value}");
+
+                // If LabId is provided, validate that Room belongs to that Lab
+                if (request.LabId.HasValue && room.LabId != request.LabId.Value)
+                    throw new Exception($"Room '{room.Name}' does not belong to the specified Lab");
             }
 
             // Validate RoomSlots if provided
             if (request.RoomSlotIds != null && request.RoomSlotIds.Any())
             {
-                // Get all requested room slots
+                // Get all requested room slots with Room and Lab info
                 var roomSlots = await _db.RoomSlots
                     .Include(rs => rs.Room)
+                        .ThenInclude(r => r.Lab)
                     .Where(rs => request.RoomSlotIds.Contains(rs.Id))
                     .ToListAsync();
 
@@ -193,9 +216,16 @@ namespace Application.Services.Event
                 if (distinctRoomIds.Count > 1)
                     throw new Exception("All RoomSlots must belong to the same Room");
 
+                // Get the room from the first slot
+                var slotRoom = roomSlots.First().Room;
+
                 // If RoomId is provided, validate it matches the slots' room
                 if (request.RoomId.HasValue && !distinctRoomIds.Contains(request.RoomId.Value))
                     throw new Exception("RoomSlots do not belong to the specified Room");
+
+                // If LabId is provided, validate that the slots' room belongs to that Lab
+                if (request.LabId.HasValue && slotRoom.LabId != request.LabId.Value)
+                    throw new Exception($"RoomSlots belong to a Room that does not belong to the specified Lab");
 
                 // Check if any slot already has an event
                 var slotsWithEvents = roomSlots.Where(rs => rs.EventId.HasValue).ToList();
