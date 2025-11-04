@@ -55,21 +55,28 @@ namespace ControllerLayer.Controllers
 		}
 
 		/// <summary>
-		/// Tạo booking mới cho người dùng hiện tại.
+		/// Tạo booking mới cho người dùng hiện tại (booking theo Event).
 		/// </summary>
-		/// <param name="request">Phải có RoomId với EventId  </param>
+		/// <param name="request">Phải có EventId (bắt buộc). RoomId sẽ tự động lấy từ Event.</param>
 		/// <returns>Booking vừa tạo với trạng thái Pending (chờ duyệt).</returns>
 		[HttpPost]
 		[Authorize]
 		public async Task<ActionResult<BookingDetail>> Create(CreateBookingRequest request)
 		{
-			// Try to get user ID from different claim types
-			var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? 
-						   User.FindFirstValue("nameid") ?? 
-						   User.FindFirstValue("sub");
-			if (string.IsNullOrEmpty(userIdStr)) return Unauthorized();
-			var result = await _service.CreateAsync(Guid.Parse(userIdStr), request);
-			return Ok(result);
+			try
+			{
+				// Try to get user ID from different claim types
+				var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? 
+							   User.FindFirstValue("nameid") ?? 
+							   User.FindFirstValue("sub");
+				if (string.IsNullOrEmpty(userIdStr)) return Unauthorized();
+				var result = await _service.CreateAsync(Guid.Parse(userIdStr), request);
+				return Ok(result);
+			}
+			catch (Exception ex)
+			{
+				return BadRequest(ex.Message);
+			}
 		}
 
 		/// <summary>
