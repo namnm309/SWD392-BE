@@ -14,10 +14,7 @@ namespace DomainLayer.Entities
 
 		public LabStatus Status { get; set; } = LabStatus.Active;
 
-		public Guid? RoomId { get; set; }
-
-		[ForeignKey(nameof(RoomId))]
-		public Room? Room { get; set; }
+		public ICollection<Room> Rooms { get; set; } = new List<Room>();
 
 		public ICollection<LabMember> Members { get; set; } = new List<LabMember>();
 	}

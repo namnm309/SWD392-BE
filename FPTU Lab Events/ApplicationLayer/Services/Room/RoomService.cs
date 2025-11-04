@@ -45,7 +45,9 @@ namespace Application.Services.Room
                            .Take(filter.PageSize.Value);
             }
 
-            var rooms = await query.ToListAsync();
+            var rooms = await query
+                .Include(r => r.Lab)
+                .ToListAsync();
 
             return rooms.Select(r => new RoomListItem
             {
@@ -53,6 +55,8 @@ namespace Application.Services.Room
                 Name = r.Name,
                 Capacity = r.Capacity,
                 Status = r.Status.ToString(),
+                LabId = r.LabId,
+                LabName = r.Lab?.Name,
                 EquipmentCount = r.Equipments.Count,
                 ActiveBookings = r.Bookings.Count(b => b.StartTime <= DateTime.UtcNow && b.EndTime >= DateTime.UtcNow)
             }).ToList();
@@ -61,6 +65,7 @@ namespace Application.Services.Room
         public async Task<RoomDetail> GetRoomByIdAsync(Guid id)
         {
             var room = await _db.Rooms
+                .Include(r => r.Lab)
                 .Include(r => r.Equipments)
                 .Include(r => r.Bookings.Where(b => b.Status == BookingStatus.Approved))
                     .ThenInclude(b => b.User)
@@ -115,6 +120,8 @@ namespace Application.Services.Room
                 Name = room.Name,
                 Capacity = room.Capacity,
                 Status = room.Status.ToString(),
+                LabId = room.LabId,
+                LabName = room.Lab?.Name,
                 EquipmentCount = room.Equipments.Count,
                 ActiveBookings = room.Bookings.Count(b => b.StartTime <= DateTime.UtcNow && b.EndTime >= DateTime.UtcNow),
                 CreatedAt = room.CreatedAt,
@@ -142,12 +149,21 @@ namespace Application.Services.Room
 
         public async Task<RoomDetail> CreateRoomAsync(CreateRoomRequest request)
         {
+            // Validate LabId if provided
+            if (request.LabId.HasValue)
+            {
+                var labExists = await _db.Labs.AnyAsync(l => l.Id == request.LabId.Value);
+                if (!labExists)
+                    throw new Exception("Lab not found");
+            }
+
             var room = new DomainLayer.Entities.Room
             {
                 Id = Guid.NewGuid(),
                 Name = request.Name,
                 Capacity = request.Capacity,
                 Status = RoomStatus.Available,
+                LabId = request.LabId,
                 CreatedAt = DateTime.UtcNow,
                 LastUpdatedAt = DateTime.UtcNow
             };
@@ -169,6 +185,17 @@ namespace Application.Services.Room
             
             if (request.Capacity.HasValue)
                 room.Capacity = request.Capacity.Value;
+
+            if (request.LabId != room.LabId)
+            {
+                if (request.LabId.HasValue)
+                {
+                    var labExists = await _db.Labs.AnyAsync(l => l.Id == request.LabId.Value);
+                    if (!labExists)
+                        throw new Exception("Lab not found");
+                }
+                room.LabId = request.LabId;
+            }
 
             room.LastUpdatedAt = DateTime.UtcNow;
             _db.Rooms.Update(room);
@@ -446,23 +473,90 @@ namespace Application.Services.Room
 
         public async Task<RoomSlotInfo> UpdateRoomSlotAsync(Guid slotId, UpdateRoomSlotRequest request)
         {
-            var roomSlot = await _db.RoomSlots.FirstOrDefaultAsync(rs => rs.Id == slotId)
+            var roomSlot = await _db.RoomSlots
+                .Include(rs => rs.Room)
+                .FirstOrDefaultAsync(rs => rs.Id == slotId)
                 ?? throw new Exception($"RoomSlot not found with ID: {slotId}");
 
+            // Update RoomId if provided
+            if (request.RoomId.HasValue)
+            {
+                var roomExists = await _db.Rooms.AnyAsync(r => r.Id == request.RoomId.Value);
+                if (!roomExists)
+                    throw new Exception($"Room not found with ID: {request.RoomId.Value}");
+                
+                roomSlot.RoomId = request.RoomId.Value;
+            }
+
+            // Update Date if provided
+            if (request.Date.HasValue)
+            {
+                roomSlot.Date = request.Date.Value.Date;
+                // Recalculate DayOfWeek when Date changes
+                roomSlot.DayOfWeek = (int)request.Date.Value.DayOfWeek;
+            }
+
+            // Update SlotNumber if provided
+            if (request.SlotNumber.HasValue)
+            {
+                if (request.SlotNumber.Value < 1 || request.SlotNumber.Value > 8)
+                    throw new Exception("Slot number must be between 1 and 8");
+                roomSlot.SlotNumber = request.SlotNumber.Value;
+            }
+
+            // Update StartTime if provided
+            if (request.StartTime.HasValue)
+            {
+                roomSlot.StartTime = request.StartTime.Value;
+            }
+
+            // Update EndTime if provided
+            if (request.EndTime.HasValue)
+            {
+                roomSlot.EndTime = request.EndTime.Value;
+            }
+
+            // Update EventId if provided
             if (request.EventId.HasValue)
             {
-                // Validate event exists if setting to a value (not null)
-                if (request.EventId.Value != Guid.Empty)
+                // If EventId is Guid.Empty, set to null (remove event assignment)
+                if (request.EventId.Value == Guid.Empty)
                 {
+                    roomSlot.EventId = null;
+                }
+                else
+                {
+                    // Validate event exists
                     var eventExists = await _db.Events.AnyAsync(e => e.Id == request.EventId.Value);
                     if (!eventExists)
                         throw new Exception($"Event not found with ID: {request.EventId.Value}");
+                    
+                    roomSlot.EventId = request.EventId.Value;
                 }
-                roomSlot.EventId = request.EventId.Value == Guid.Empty ? null : request.EventId.Value;
             }
 
+            // Update Status if provided
             if (request.Status != null)
+            {
                 roomSlot.Status = request.Status;
+            }
+
+            // Check if updated slot conflicts with existing slot
+            var finalRoomId = request.RoomId ?? roomSlot.RoomId;
+            var finalDate = request.Date ?? roomSlot.Date;
+            var finalSlotNumber = request.SlotNumber ?? roomSlot.SlotNumber;
+
+            var conflictingSlot = await _db.RoomSlots
+                .AnyAsync(rs => rs.Id != slotId &&
+                               rs.RoomId == finalRoomId &&
+                               rs.Date.Date == finalDate.Date &&
+                               rs.SlotNumber == finalSlotNumber);
+
+            if (conflictingSlot)
+            {
+                var room = await _db.Rooms.FirstOrDefaultAsync(r => r.Id == finalRoomId);
+                throw new Exception($"Room slot already exists for Room {room?.Name ?? finalRoomId.ToString()}, Date {finalDate:dd/MM/yyyy}, Slot {finalSlotNumber}");
+            }
 
             roomSlot.LastUpdatedAt = DateTime.UtcNow;
 

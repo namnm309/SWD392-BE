@@ -9,8 +9,7 @@ namespace Application.DTOs.Lab
         public string Name { get; set; } = null!;
         public string? Location { get; set; }
         public string Status { get; set; } = null!;
-        public Guid? RoomId { get; set; }
-        public string? RoomName { get; set; }
+        public int RoomCount { get; set; }
         public int MemberCount { get; set; }
         public int EquipmentCount { get; set; }
         public int ActiveBookings { get; set; }
@@ -20,7 +19,7 @@ namespace Application.DTOs.Lab
     {
         public DateTime CreatedAt { get; set; }
         public DateTime LastUpdatedAt { get; set; }
-        public RoomInfo? Room { get; set; }
+        public List<RoomInfo> Rooms { get; set; } = new List<RoomInfo>();
         public List<LabMemberInfo> Members { get; set; } = new List<LabMemberInfo>();
         public List<EquipmentInfo> Equipments { get; set; } = new List<EquipmentInfo>();
         public List<BookingInfo> RecentBookings { get; set; } = new List<BookingInfo>();
@@ -66,18 +65,37 @@ namespace Application.DTOs.Lab
 
     public class CreateLabRequest
     {
+        /// <summary>
+        /// Tên của lab
+        /// </summary>
         public string Name { get; set; } = null!;
+        
+        /// <summary>
+        /// Địa điểm của lab (tùy chọn)
+        /// </summary>
         public string? Location { get; set; }
-        public Guid? RoomId { get; set; }
+        
+        /// <summary>
+        /// Trạng thái của lab (mặc định: Active)
+        /// </summary>
         public LabStatus Status { get; set; } = LabStatus.Active;
+        
+        /// <summary>
+        /// Danh sách ID các room muốn gán vào lab (tùy chọn)
+        /// </summary>
+        public List<Guid>? RoomIds { get; set; }
     }
 
     public class UpdateLabRequest
     {
         public string? Name { get; set; }
         public string? Location { get; set; }
-        public Guid? RoomId { get; set; }
         public LabStatus? Status { get; set; }
+        
+        /// <summary>
+        /// Danh sách ID các room muốn gán vào lab (tùy chọn). Nếu null thì không thay đổi, nếu có giá trị thì sẽ thay thế toàn bộ danh sách rooms hiện tại.
+        /// </summary>
+        public List<Guid>? RoomIds { get; set; }
     }
 
     public class UpdateLabStatusRequest
