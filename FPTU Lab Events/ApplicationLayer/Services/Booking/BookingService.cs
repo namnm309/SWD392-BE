@@ -34,6 +34,7 @@ namespace Application.Services.Booking
 			{
 				if (filter.RoomId.HasValue) query = query.Where(b => b.RoomId == filter.RoomId.Value);
 				if (filter.UserId.HasValue) query = query.Where(b => b.UserId == filter.UserId.Value);
+				if (filter.EventId.HasValue) query = query.Where(b => b.EventId == filter.EventId.Value);
 				if (filter.Status.HasValue) query = query.Where(b => b.Status == filter.Status.Value);
 				if (filter.From.HasValue) query = query.Where(b => b.EndTime >= filter.From.Value);
 				if (filter.To.HasValue) query = query.Where(b => b.StartTime <= filter.To.Value);
@@ -123,28 +124,73 @@ namespace Application.Services.Booking
 
 		public async Task<BookingDetail> CreateAsync(Guid currentUserId, CreateBookingRequest request)
 		{
-			// Validate room and availability
-			var room = await _db.Rooms.Include(r => r.Bookings).FirstOrDefaultAsync(r => r.Id == request.RoomId)
-				?? throw new Exception("Room not found");
+			// Validate EventId is required
+			if (request.EventId == Guid.Empty)
+				throw new Exception("EventId is required");
 
+			// Get Event with RoomSlots
+			var eventEntity = await _db.Events
+				.Include(e => e.RoomSlots)
+					.ThenInclude(rs => rs.Room)
+				.Include(e => e.Bookings.Where(b => b.Status == BookingStatus.Approved))
+				.FirstOrDefaultAsync(e => e.Id == request.EventId)
+				?? throw new Exception("Event not found");
+
+			// Validate Event status - allow booking for Active and Inactive events
+			// Only block Cancelled and Completed events
+			if (eventEntity.Status == DomainLayer.Enum.EventStatus.Cancelled)
+				throw new Exception("Event has been cancelled and cannot accept bookings");
+			
+			if (eventEntity.Status == DomainLayer.Enum.EventStatus.Completed)
+				throw new Exception("Event has been completed and cannot accept bookings");
+
+			// Validate Event has RoomSlots
+			if (!eventEntity.RoomSlots.Any())
+				throw new Exception("Event does not have any RoomSlots assigned");
+
+			// Get RoomId from first RoomSlot (all slots should belong to same room)
+			var firstSlot = eventEntity.RoomSlots.First();
+			var roomId = firstSlot.RoomId;
+			var room = firstSlot.Room;
+
+			// Validate Room is available
 			if (room.Status != RoomStatus.Available)
-				throw new Exception("Room is not available");
+				throw new Exception($"Room '{room.Name}' is not available");
 
-			var overlaps = room.Bookings.Any(b => b.Status == BookingStatus.Approved &&
-				((b.StartTime <= request.StartTime && b.EndTime > request.StartTime) ||
-				 (b.StartTime < request.EndTime && b.EndTime >= request.EndTime) ||
-				 (b.StartTime >= request.StartTime && b.EndTime <= request.EndTime)));
-			if (overlaps) throw new Exception("Room time overlaps with existing bookings");
+			// Check if user already has a booking for this event
+			var existingBooking = await _db.Bookings
+				.AnyAsync(b => b.UserId == currentUserId && 
+							   b.EventId == request.EventId && 
+							   b.Status != BookingStatus.Rejected && 
+							   b.Status != BookingStatus.Cancelled);
+			if (existingBooking)
+				throw new Exception("You already have a booking for this event");
+
+			// Check Event capacity (if capacity is set)
+			if (eventEntity.Capacity > 0)
+			{
+				var approvedBookingsCount = eventEntity.Bookings.Count;
+				if (approvedBookingsCount >= eventEntity.Capacity)
+					throw new Exception($"Event has reached its capacity ({eventEntity.Capacity})");
+			}
+
+			// Use Event dates if StartTime/EndTime not provided
+			var startTime = request.StartTime ?? eventEntity.StartDate;
+			var endTime = request.EndTime ?? eventEntity.EndDate;
+
+			// Validate dates
+			if (startTime < eventEntity.StartDate || endTime > eventEntity.EndDate)
+				throw new Exception("Booking time must be within Event time range");
 
 			var booking = new DomainLayer.Entities.Booking
 			{
 				Id = Guid.NewGuid(),
 				UserId = currentUserId,
-				RoomId = request.RoomId,
+				RoomId = roomId,
 				EventId = request.EventId,
-				StartTime = request.StartTime,
-				EndTime = request.EndTime,
-				Purpose = request.Purpose,
+				StartTime = startTime,
+				EndTime = endTime,
+				Purpose = request.Purpose ?? $"Booking for event: {eventEntity.Title}",
 				Status = BookingStatus.Pending,
 				Notes = request.Notes,
 				CreatedAt = DateTime.UtcNow,
@@ -190,6 +236,7 @@ namespace Application.Services.Booking
             var parts = new List<string> { "bookings:v1" };
             if (filter.RoomId.HasValue) parts.Add($"room:{filter.RoomId.Value}");
             if (filter.UserId.HasValue) parts.Add($"user:{filter.UserId.Value}");
+            if (filter.EventId.HasValue) parts.Add($"event:{filter.EventId.Value}");
             if (filter.Status.HasValue) parts.Add($"status:{(int)filter.Status.Value}");
             if (filter.From.HasValue) parts.Add($"from:{filter.From.Value:O}");
             if (filter.To.HasValue) parts.Add($"to:{filter.To.Value:O}");

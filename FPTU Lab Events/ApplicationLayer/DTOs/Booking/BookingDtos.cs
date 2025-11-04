@@ -25,29 +25,24 @@ namespace Application.DTOs.Booking
 	public class CreateBookingRequest
 	{
 		/// <summary>
-		/// ID của phòng cần đặt
+		/// ID của sự kiện cần đặt (bắt buộc)
 		/// </summary>
-		public Guid RoomId { get; set; }
+		public Guid EventId { get; set; }
 		
 		/// <summary>
-		/// Thời gian bắt đầu đặt phòng (ISO 8601 format)
+		/// Thời gian bắt đầu đặt (ISO 8601 format) - nếu không có sẽ dùng StartDate của Event
 		/// </summary>
-		public DateTime StartTime { get; set; }
+		public DateTime? StartTime { get; set; }
 		
 		/// <summary>
-		/// Thời gian kết thúc đặt phòng (ISO 8601 format)
+		/// Thời gian kết thúc đặt (ISO 8601 format) - nếu không có sẽ dùng EndDate của Event
 		/// </summary>
-		public DateTime EndTime { get; set; }
+		public DateTime? EndTime { get; set; }
 		
 		/// <summary>
-		/// Mục đích sử dụng phòng
+		/// Mục đích tham gia event
 		/// </summary>
-		public string Purpose { get; set; } = null!;
-		
-		/// <summary>
-		/// ID của sự kiện liên quan (tùy chọn)
-		/// </summary>
-		public Guid? EventId { get; set; }
+		public string? Purpose { get; set; }
 		
 		/// <summary>
 		/// Ghi chú thêm (tùy chọn)
@@ -72,6 +67,11 @@ namespace Application.DTOs.Booking
 	{
 		public Guid? RoomId { get; set; }
 		public Guid? UserId { get; set; }
+		
+		/// <summary>
+		/// ID của event để filter bookings
+		/// </summary>
+		public Guid? EventId { get; set; }
 		
 		/// <summary>
 		/// Trạng thái booking (0=Pending, 1=Approved, 2=Rejected, 3=Cancelled, 4=Completed)
