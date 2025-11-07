@@ -130,10 +130,10 @@ namespace ControllerLayer.Controllers
         }
 
         /// <summary>
-        /// Tạo event mới (Admin only)
+        /// Tạo event mới (Admin và Lecturer)
         /// </summary>
         [HttpPost]
-        [Authorize(Roles = "Admin")]
+        [Authorize(Roles = "Admin,Lecturer")]
         public async Task<IActionResult> CreateEvent([FromBody] CreateEventRequest request)
         {
             try
@@ -143,10 +143,10 @@ namespace ControllerLayer.Controllers
                 Console.WriteLine($"StartDate: {request.StartDate}");
                 Console.WriteLine($"EndDate: {request.EndDate}");
                 
-                var adminId = GetCurrentUserId();
-                Console.WriteLine($"Admin ID: {adminId}");
+                var userId = GetCurrentUserId();
+                Console.WriteLine($"User ID: {userId}");
                 
-                var eventDetail = await _eventService.CreateEventAsync(request, adminId);
+                var eventDetail = await _eventService.CreateEventAsync(request, userId);
                 return SuccessResp.Created(eventDetail);
             }
             catch (Exception ex)
