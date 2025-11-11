@@ -14,6 +14,7 @@ namespace Application.Services.Event
         // Utility functions
         Task<IReadOnlyList<EventListItem>> GetUpcomingEventsAsync();
         Task<IReadOnlyList<EventListItem>> GetEventsByDateRangeAsync(DateTime startDate, DateTime endDate);
+        Task<IReadOnlyList<EventListItem>> GetEventsByUserIdAsync(Guid userId);
         Task<int> GetEventCountAsync();
         Task<int> GetActiveEventCountAsync();
     }

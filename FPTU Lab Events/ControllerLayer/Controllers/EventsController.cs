@@ -79,6 +79,54 @@ namespace ControllerLayer.Controllers
         }
 
         /// <summary>
+        /// Lấy events của user hiện tại (my events)
+        /// </summary>
+        [HttpGet("my-events")]
+        public async Task<IActionResult> GetMyEvents()
+        {
+            try
+            {
+                var userId = GetCurrentUserId();
+                var events = await _eventService.GetEventsByUserIdAsync(userId);
+                return SuccessResp.Ok(events);
+            }
+            catch (Exception ex)
+            {
+                return ErrorResp.BadRequest(ex.Message);
+            }
+        }
+
+        /// <summary>
+        /// Lấy events theo userId
+        /// - Lecturer chỉ xem được events của chính mình
+        /// - Admin có thể xem events của bất kỳ user nào
+        /// </summary>
+        [HttpGet("user/{userId}")]
+        [Authorize(Roles = "Admin,Lecturer")]
+        public async Task<IActionResult> GetEventsByUserId(Guid userId)
+        {
+            try
+            {
+                var currentUserId = GetCurrentUserId();
+                var userRole = User.FindFirst("Role")?.Value ?? User.FindFirst("role")?.Value;
+                
+                // Nếu là Lecturer, chỉ được xem events của chính mình
+                if (userRole == "Lecturer" && currentUserId != userId)
+                {
+                    return ErrorResp.Forbidden("Lecturers can only view their own events. Please use your own userId or use /api/events/my-events instead.");
+                }
+                
+                // Admin có thể xem events của bất kỳ ai
+                var events = await _eventService.GetEventsByUserIdAsync(userId);
+                return SuccessResp.Ok(events);
+            }
+            catch (Exception ex)
+            {
+                return ErrorResp.BadRequest(ex.Message);
+            }
+        }
+
+        /// <summary>
         /// Lấy events theo date range
         /// </summary>
         [HttpGet("date-range")]
