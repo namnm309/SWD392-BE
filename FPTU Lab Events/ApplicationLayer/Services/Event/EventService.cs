@@ -462,6 +462,32 @@ namespace Application.Services.Event
             }).ToList();
         }
 
+        public async Task<IReadOnlyList<EventListItem>> GetEventsByUserIdAsync(Guid userId)
+        {
+            var events = await _db.Events
+                .Include(e => e.CreatedByUser)
+                .Include(e => e.Bookings)
+                .Where(e => e.CreatedBy == userId)
+                .OrderByDescending(e => e.CreatedAt)
+                .ToListAsync();
+
+            return events.Select(e => new EventListItem
+            {
+                Id = e.Id,
+                Title = e.Title,
+                Description = e.Description,
+                StartDate = e.StartDate,
+                EndDate = e.EndDate,
+                Status = e.Status.ToString(),
+                Visibility = e.Visibility,
+                CreatedBy = e.CreatedByUser.Fullname,
+                BookingCount = e.Bookings.Count,
+                IsUpcoming = e.StartDate > DateTime.UtcNow,
+                Capacity = e.Capacity,
+                ImageUrl = e.ImageUrl
+            }).ToList();
+        }
+
         public async Task<int> GetEventCountAsync()
         {
             return await _db.Events.CountAsync();
