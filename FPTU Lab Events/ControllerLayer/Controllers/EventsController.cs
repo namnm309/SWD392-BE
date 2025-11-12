@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Application.DTOs.Event;
 using Application.ResponseCode;
 using Application.Services.Event;
+using DomainLayer.Enum;
 using InfrastructureLayer.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -29,12 +30,23 @@ namespace ControllerLayer.Controllers
 
         /// <summary>
         /// Lấy tất cả events (View Event API)
+        /// - User thường (Student, Lecturer): Chỉ xem events Active
+        /// - Staff/Admin: Xem tất cả events (kể cả Pending, Rejected)
         /// </summary>
         [HttpGet]
         public async Task<IActionResult> GetAllEvents([FromQuery] EventFilterRequest? filter)
         {
             try
             {
+                var userRole = User.FindFirst("Role")?.Value ?? User.FindFirst("role")?.Value;
+                
+                // Nếu không phải Staff/Admin, chỉ cho xem Active events
+                if (userRole != "Admin" && userRole != "Staff")
+                {
+                    filter ??= new EventFilterRequest();
+                    filter.Status = EventStatus.Active;
+                }
+                
                 var events = await _eventService.GetAllEventsAsync(filter);
                 return SuccessResp.Ok(events);
             }
@@ -178,7 +190,9 @@ namespace ControllerLayer.Controllers
         }
 
         /// <summary>
-        /// Tạo event mới (Admin và Lecturer)
+        /// Tạo event mới
+        /// - Lecturer: Event được tạo với status Pending, cần Staff duyệt
+        /// - Admin/Staff: Event được tạo với status Active, không cần duyệt
         /// </summary>
         [HttpPost]
         [Authorize(Roles = "Admin,Lecturer")]
@@ -186,15 +200,26 @@ namespace ControllerLayer.Controllers
         {
             try
             {
+                var userId = GetCurrentUserId();
+                var userRole = User.FindFirst("Role")?.Value ?? User.FindFirst("role")?.Value ?? "Unknown";
+                
                 Console.WriteLine($"=== DEBUG: CreateEvent Request ===");
                 Console.WriteLine($"Title: {request.Title}");
-                Console.WriteLine($"StartDate: {request.StartDate}");
-                Console.WriteLine($"EndDate: {request.EndDate}");
-                
-                var userId = GetCurrentUserId();
                 Console.WriteLine($"User ID: {userId}");
+                Console.WriteLine($"User Role: {userRole}");
                 
-                var eventDetail = await _eventService.CreateEventAsync(request, userId);
+                var eventDetail = await _eventService.CreateEventAsync(request, userId, userRole);
+                
+                // Return different messages based on status
+                if (eventDetail.Status == "Pending")
+                {
+                    return SuccessResp.Created(new 
+                    { 
+                        Event = eventDetail, 
+                        Message = "Event created successfully and is pending Staff approval." 
+                    });
+                }
+                
                 return SuccessResp.Created(eventDetail);
             }
             catch (Exception ex)
@@ -237,6 +262,92 @@ namespace ControllerLayer.Controllers
                 var adminId = GetCurrentUserId();
                 await _eventService.DeleteEventAsync(id, request, adminId);
                 return NoContent();
+            }
+            catch (Exception ex)
+            {
+                return ErrorResp.BadRequest(ex.Message);
+            }
+        }
+
+        /// <summary>
+        /// Lấy danh sách events chờ duyệt (Admin only)
+        /// </summary>
+        [HttpGet("pending")]
+        [Authorize(Roles = "Admin")]
+        public async Task<IActionResult> GetPendingEvents()
+        {
+            try
+            {
+                var events = await _eventService.GetPendingEventsAsync();
+                return SuccessResp.Ok(events);
+            }
+            catch (Exception ex)
+            {
+                return ErrorResp.BadRequest(ex.Message);
+            }
+        }
+
+        /// <summary>
+        /// Lấy số lượng events chờ duyệt (Admin only)
+        /// </summary>
+        [HttpGet("pending-count")]
+        [Authorize(Roles = "Admin")]
+        public async Task<IActionResult> GetPendingEventCount()
+        {
+            try
+            {
+                var count = await _eventService.GetPendingEventCountAsync();
+                return SuccessResp.Ok(new { PendingCount = count });
+            }
+            catch (Exception ex)
+            {
+                return ErrorResp.BadRequest(ex.Message);
+            }
+        }
+
+        /// <summary>
+        /// Duyệt event (Admin only)
+        /// </summary>
+        [HttpPost("{id}/approve")]
+        [Authorize(Roles = "Admin")]
+        public async Task<IActionResult> ApproveEvent(Guid id, [FromBody] ApproveEventRequest? request = null)
+        {
+            try
+            {
+                var staffId = GetCurrentUserId();
+                var approvalNote = request?.ApprovalNote;
+                var eventDetail = await _eventService.ApproveEventAsync(id, staffId, approvalNote);
+                return SuccessResp.Ok(new 
+                { 
+                    Event = eventDetail, 
+                    Message = "Event approved successfully and is now active." 
+                });
+            }
+            catch (Exception ex)
+            {
+                return ErrorResp.BadRequest(ex.Message);
+            }
+        }
+
+        /// <summary>
+        /// Từ chối event (Admin only)
+        /// </summary>
+        [HttpPost("{id}/reject")]
+        [Authorize(Roles = "Admin")]
+        public async Task<IActionResult> RejectEvent(Guid id, [FromBody] RejectEventRequest request)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(request.RejectionReason))
+                    return ErrorResp.BadRequest("Rejection reason is required");
+
+                var staffId = GetCurrentUserId();
+                var eventDetail = await _eventService.RejectEventAsync(id, staffId, request.RejectionReason);
+                return SuccessResp.Ok(new 
+                { 
+                    Event = eventDetail, 
+                    Message = "Event rejected successfully." 
+                });
             }
             catch (Exception ex)
             {

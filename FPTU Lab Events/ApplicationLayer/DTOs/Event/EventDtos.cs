@@ -100,13 +100,23 @@ namespace Application.DTOs.Event
         public bool ConfirmDeletion { get; set; }
     }
 
+    public class ApproveEventRequest
+    {
+        public string? ApprovalNote { get; set; }
+    }
+
+    public class RejectEventRequest
+    {
+        public string RejectionReason { get; set; } = null!;
+    }
+
     public class EventLogInfo
     {
         public Guid AdminId { get; set; }
         public string AdminName { get; set; } = null!;
         public Guid EventId { get; set; }
         public string EventTitle { get; set; } = null!;
-        public string Action { get; set; } = null!; // Create, Update, Delete
+        public string Action { get; set; } = null!; // Create, Update, Delete, Approve, Reject
         public DateTime Timestamp { get; set; }
         public string? Changes { get; set; } // For update operations
     }
