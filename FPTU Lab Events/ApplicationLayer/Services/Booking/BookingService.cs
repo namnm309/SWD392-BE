@@ -166,13 +166,15 @@ namespace Application.Services.Booking
 			if (existingBooking)
 				throw new Exception("You already have a booking for this event");
 
-			// Check Event capacity (if capacity is set)
-			if (eventEntity.Capacity > 0)
-			{
-				var approvedBookingsCount = eventEntity.Bookings.Count;
-				if (approvedBookingsCount >= eventEntity.Capacity)
-					throw new Exception($"Event has reached its capacity ({eventEntity.Capacity})");
-			}
+			// Check Room capacity for this event
+			// Count approved bookings for this event in this room
+			var approvedBookingsCount = await _db.Bookings
+				.CountAsync(b => b.EventId == request.EventId && 
+								 b.RoomId == roomId && 
+								 b.Status == BookingStatus.Approved);
+			
+			if (room.Capacity > 0 && approvedBookingsCount >= room.Capacity)
+				throw new Exception($"Room '{room.Name}' has reached its capacity ({room.Capacity}) for this event. No more bookings allowed.");
 
 			// Use Event dates if StartTime/EndTime not provided
 			var startTime = request.StartTime ?? eventEntity.StartDate;
@@ -205,8 +207,25 @@ namespace Application.Services.Booking
 
 		public async Task<BookingDetail> UpdateStatusAsync(Guid id, UpdateBookingStatusRequest request)
 		{
-			var booking = await _db.Bookings.FirstOrDefaultAsync(b => b.Id == id)
+			var booking = await _db.Bookings
+				.Include(b => b.Room)
+				.Include(b => b.Event)
+				.FirstOrDefaultAsync(b => b.Id == id)
 				?? throw new Exception("Booking not found");
+
+			// If approving booking, check room capacity
+			if (request.Status == BookingStatus.Approved && booking.Status != BookingStatus.Approved)
+			{
+				// Check if room has capacity for this event
+				var approvedBookingsCount = await _db.Bookings
+					.CountAsync(b => b.EventId == booking.EventId && 
+									 b.RoomId == booking.RoomId && 
+									 b.Status == BookingStatus.Approved &&
+									 b.Id != booking.Id); // Exclude current booking
+				
+				if (booking.Room.Capacity > 0 && approvedBookingsCount >= booking.Room.Capacity)
+					throw new Exception($"Cannot approve booking. Room '{booking.Room.Name}' has reached its capacity ({booking.Room.Capacity}) for this event.");
+			}
 
 			booking.Status = request.Status;
 			booking.Notes = request.Notes ?? booking.Notes;

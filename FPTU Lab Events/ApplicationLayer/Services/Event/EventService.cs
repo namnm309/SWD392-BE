@@ -63,7 +63,6 @@ namespace Application.Services.Event
                 CreatedBy = e.CreatedByUser.Fullname,
                 BookingCount = e.Bookings.Count,
                 IsUpcoming = e.StartDate > DateTime.UtcNow,
-                Capacity = e.Capacity,
                 ImageUrl = e.ImageUrl
             }).ToList();
         }
@@ -131,7 +130,6 @@ namespace Application.Services.Event
                 RoomId = firstSlot?.RoomId,
                 RoomName = firstSlot?.Room.Name,
                 RoomSlots = roomSlots,
-                Capacity = eventEntity.Capacity,
                 ImageUrl = eventEntity.ImageUrl
             };
         }
@@ -250,7 +248,6 @@ namespace Application.Services.Event
                 EndDate = request.EndDate,
                 Status = initialStatus,
                 Visibility = request.Visibility,
-                Capacity = request.Capacity,
                 ImageUrl = request.ImageUrl,
                 CreatedBy = userId,
                 CreatedAt = DateTime.UtcNow,
@@ -361,12 +358,6 @@ namespace Application.Services.Event
                 eventEntity.Visibility = request.Visibility.Value;
             }
 
-            if (request.Capacity.HasValue && request.Capacity.Value != eventEntity.Capacity)
-            {
-                changes.Add($"Capacity: {eventEntity.Capacity} -> {request.Capacity.Value}");
-                eventEntity.Capacity = request.Capacity.Value;
-            }
-
             if (request.ImageUrl != null && request.ImageUrl != eventEntity.ImageUrl)
             {
                 changes.Add($"ImageUrl: '{eventEntity.ImageUrl}' -> '{request.ImageUrl}'");
@@ -446,7 +437,6 @@ namespace Application.Services.Event
                 CreatedBy = e.CreatedByUser.Fullname,
                 BookingCount = e.Bookings.Count,
                 IsUpcoming = true,
-                Capacity = e.Capacity,
                 ImageUrl = e.ImageUrl
             }).ToList();
         }
@@ -472,7 +462,6 @@ namespace Application.Services.Event
                 CreatedBy = e.CreatedByUser.Fullname,
                 BookingCount = e.Bookings.Count,
                 IsUpcoming = e.StartDate > DateTime.UtcNow,
-                Capacity = e.Capacity,
                 ImageUrl = e.ImageUrl
             }).ToList();
         }
@@ -498,7 +487,6 @@ namespace Application.Services.Event
                 CreatedBy = e.CreatedByUser.Fullname,
                 BookingCount = e.Bookings.Count,
                 IsUpcoming = e.StartDate > DateTime.UtcNow,
-                Capacity = e.Capacity,
                 ImageUrl = e.ImageUrl
             }).ToList();
         }
@@ -602,7 +590,6 @@ namespace Application.Services.Event
                 CreatedBy = e.CreatedByUser.Fullname,
                 BookingCount = e.Bookings.Count,
                 IsUpcoming = e.StartDate > DateTime.UtcNow,
-                Capacity = e.Capacity,
                 ImageUrl = e.ImageUrl
             }).ToList();
         }

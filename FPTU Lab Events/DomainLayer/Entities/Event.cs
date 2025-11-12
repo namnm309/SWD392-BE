@@ -20,8 +20,6 @@ namespace DomainLayer.Entities
 
 	public bool Visibility { get; set; } = true;
 
-	public int Capacity { get; set; }
-
 	public string? ImageUrl { get; set; }
 
 	public Guid CreatedBy { get; set; }
