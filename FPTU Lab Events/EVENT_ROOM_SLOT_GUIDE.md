@@ -6,6 +6,21 @@
 
 ---
 
+## ⚡ Redis caching cho API GET (12/11/2025)
+
+- TTL mặc định: **30 giây** (`InfrastructureLayer/Core/Redis/RedisCacheHelpers.cs` → `RedisCacheDefaults.DefaultTtl`).
+- Tất cả service GET quan trọng (`Bookings`, `Events`, `Rooms`, `Labs`, `Equipments`, `Notifications`, `Users`) dùng chung helper build key để giữ nguyên URL/response cũ.
+- Các thao tác ghi (create/update/delete) sẽ cố gắng xoá cache chính, phần còn lại tự hết hạn theo TTL.
+- Có thể tham khảo mẫu response tại [`GET /api/Bookings`](http://swd392group6.runasp.net/api/Bookings).
+
+### ✅ Hướng dẫn test nhanh
+
+1. **Cache hit:** Gọi `GET /api/Bookings` hai lần liên tiếp (Swagger/Postman). Lần thứ hai trả về nhanh hơn và không truy vấn lại DB (có thể bật log Redis hoặc theo dõi CPU DB).
+2. **Invalidate khi ghi:** Tạo mới/duyệt booking → gọi lại `GET /api/Bookings` hoặc `GET /api/events` để thấy dữ liệu mới đã cập nhật (cache list/detail tương ứng bị xoá).
+3. **TTL tự hết hạn:** Không thao tác gì thêm, chờ 30 giây rồi gọi lại endpoint để kiểm tra dữ liệu tự refresh khi cache hết hạn.
+
+---
+
 ## 🎯 Tính năng mới
 
 Khi tạo Event, bạn có thể:

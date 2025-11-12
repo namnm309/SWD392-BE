@@ -20,8 +20,7 @@ namespace Application.Services.Booking
 
         public async Task<IReadOnlyList<BookingListItem>> GetBookingsAsync(BookingFilterRequest? filter = null)
 		{
-            // Cache key dựa theo filter để không phá vỡ API cũ
-            var cacheKey = BuildCacheKey(filter);
+            var cacheKey = BuildListCacheKey(filter);
             var cached = await _redis.GetAsync<IReadOnlyList<BookingListItem>>(cacheKey);
             if (cached != null) return cached;
 
@@ -63,20 +62,23 @@ namespace Application.Services.Booking
 				Purpose = b.Purpose
             }).ToList();
 
-            // Lưu cache ngắn hạn để giảm tải, TTL 30s
-            await _redis.SetAsync(cacheKey, result, TimeSpan.FromSeconds(30));
+            await _redis.SetAsync(cacheKey, result, RedisCacheDefaults.DefaultTtl);
             return result;
 		}
 
 		public async Task<BookingDetail> GetByIdAsync(Guid id)
 		{
+            var cacheKey = RedisCacheKeyBuilder.Build("bookings:detail:v1", ("id", id));
+            var cached = await _redis.GetAsync<BookingDetail>(cacheKey);
+            if (cached != null) return cached;
+
 			var b = await _db.Bookings
 				.Include(x => x.User)
 				.Include(x => x.Room)
 				.FirstOrDefaultAsync(x => x.Id == id)
 				?? throw new Exception("Booking not found");
 
-			return new BookingDetail
+			var detail = new BookingDetail
 			{
 				Id = b.Id,
 				RoomId = b.RoomId,
@@ -90,10 +92,22 @@ namespace Application.Services.Booking
 				Purpose = b.Purpose,
 				Notes = b.Notes
 			};
+
+            await _redis.SetAsync(cacheKey, detail, RedisCacheDefaults.DefaultTtl);
+            return detail;
 		}
 
 		public async Task<IReadOnlyList<BookingListItem>> GetBookingsByUserIdAsync(Guid userId, int? page = null, int? pageSize = null)
 		{
+            var cacheKey = RedisCacheKeyBuilder.Build(
+                "bookings:user:v1",
+                ("userId", userId),
+                ("page", page),
+                ("pageSize", pageSize));
+
+            var cached = await _redis.GetAsync<IReadOnlyList<BookingListItem>>(cacheKey);
+            if (cached != null) return cached;
+
 			var baseQuery = _db.Bookings
 				.Include(b => b.Room)
 				.Include(b => b.User)
@@ -107,7 +121,7 @@ namespace Application.Services.Booking
 
 			var bookings = await query.ToListAsync();
 
-			return bookings.Select(b => new BookingListItem
+			var result = bookings.Select(b => new BookingListItem
 			{
 				Id = b.Id,
 				RoomId = b.RoomId,
@@ -120,6 +134,9 @@ namespace Application.Services.Booking
 				EventId = b.EventId,
 				Purpose = b.Purpose
 			}).ToList();
+
+            await _redis.SetAsync(cacheKey, result, RedisCacheDefaults.DefaultTtl);
+            return result;
 		}
 
 		public async Task<BookingDetail> CreateAsync(Guid currentUserId, CreateBookingRequest request)
@@ -201,7 +218,7 @@ namespace Application.Services.Booking
 
             _db.Bookings.Add(booking);
 			await _db.SaveChangesAsync();
-            await InvalidateListCaches(booking.UserId);
+            await InvalidateCaches(booking.UserId, booking.Id);
 			return await GetByIdAsync(booking.Id);
 		}
 
@@ -233,7 +250,7 @@ namespace Application.Services.Booking
 
             _db.Bookings.Update(booking);
 			await _db.SaveChangesAsync();
-            await InvalidateListCaches(booking.UserId);
+            await InvalidateCaches(booking.UserId, booking.Id);
 			return await GetByIdAsync(booking.Id);
 		}
 
@@ -243,32 +260,32 @@ namespace Application.Services.Booking
 				?? throw new Exception("Booking not found");
             _db.Bookings.Remove(booking);
 			await _db.SaveChangesAsync();
-            await InvalidateListCaches(booking.UserId);
+            await InvalidateCaches(booking.UserId, booking.Id);
 		}
 
-        private static string BuildCacheKey(BookingFilterRequest? filter)
+        private static string BuildListCacheKey(BookingFilterRequest? filter)
         {
             if (filter == null)
             {
-                return "bookings:all:v1";
+                return "bookings:list:v1";
             }
-            var parts = new List<string> { "bookings:v1" };
-            if (filter.RoomId.HasValue) parts.Add($"room:{filter.RoomId.Value}");
-            if (filter.UserId.HasValue) parts.Add($"user:{filter.UserId.Value}");
-            if (filter.EventId.HasValue) parts.Add($"event:{filter.EventId.Value}");
-            if (filter.Status.HasValue) parts.Add($"status:{(int)filter.Status.Value}");
-            if (filter.From.HasValue) parts.Add($"from:{filter.From.Value:O}");
-            if (filter.To.HasValue) parts.Add($"to:{filter.To.Value:O}");
-            if (filter.Page.HasValue && filter.PageSize.HasValue)
-                parts.Add($"page:{filter.Page.Value}:{filter.PageSize.Value}");
-            return string.Join('|', parts);
+            return RedisCacheKeyBuilder.Build(
+                "bookings:list:v1",
+                ("roomId", filter.RoomId),
+                ("userId", filter.UserId),
+                ("eventId", filter.EventId),
+                ("status", filter.Status),
+                ("from", filter.From),
+                ("to", filter.To),
+                ("page", filter.Page),
+                ("pageSize", filter.PageSize));
         }
 
-        private async Task InvalidateListCaches(Guid userId)
+        private async Task InvalidateCaches(Guid userId, Guid bookingId)
         {
-            // Xóa các key phổ biến; tránh đụng FE
-            await _redis.RemoveAsync("bookings:all:v1");
-            await _redis.RemoveAsync($"bookings:v1|user:{userId}");
+            await _redis.RemoveAsync("bookings:list:v1");
+            await _redis.RemoveAsync(RedisCacheKeyBuilder.Build("bookings:user:v1", ("userId", userId)));
+            await _redis.RemoveAsync(RedisCacheKeyBuilder.Build("bookings:detail:v1", ("id", bookingId)));
         }
 	}
 }

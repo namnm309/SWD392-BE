@@ -1,6 +1,7 @@
 using Application.DTOs.Event;
 using DomainLayer.Entities;
 using DomainLayer.Enum;
+using InfrastructureLayer.Core.Redis;
 using InfrastructureLayer.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -9,14 +10,20 @@ namespace Application.Services.Event
     public class EventService : IEventService
     {
         private readonly LabDbContext _db;
+        private readonly IRedisService _redis;
 
-        public EventService(LabDbContext db)
+        public EventService(LabDbContext db, IRedisService redis)
         {
             _db = db;
+            _redis = redis;
         }
 
         public async Task<IReadOnlyList<EventListItem>> GetAllEventsAsync(EventFilterRequest? filter = null)
         {
+            var cacheKey = BuildListCacheKey(filter);
+            var cached = await _redis.GetAsync<IReadOnlyList<EventListItem>>(cacheKey);
+            if (cached != null) return cached;
+
             var query = _db.Events
                 .Include(e => e.CreatedByUser)
                 .Include(e => e.Bookings)
@@ -51,7 +58,7 @@ namespace Application.Services.Event
 
             var events = await query.ToListAsync();
 
-            return events.Select(e => new EventListItem
+            var result = events.Select(e => new EventListItem
             {
                 Id = e.Id,
                 Title = e.Title,
@@ -65,10 +72,17 @@ namespace Application.Services.Event
                 IsUpcoming = e.StartDate > DateTime.UtcNow,
                 ImageUrl = e.ImageUrl
             }).ToList();
+
+            await _redis.SetAsync(cacheKey, result, RedisCacheDefaults.DefaultTtl);
+            return result;
         }
 
         public async Task<EventDetail> GetEventByIdAsync(Guid id)
         {
+            var cacheKey = RedisCacheKeyBuilder.Build("events:detail:v1", ("id", id));
+            var cached = await _redis.GetAsync<EventDetail>(cacheKey);
+            if (cached != null) return cached;
+
             var eventEntity = await _db.Events
                 .Include(e => e.CreatedByUser)
                 .Include(e => e.Bookings)
@@ -110,7 +124,7 @@ namespace Application.Services.Event
             var labId = firstSlot?.Room?.LabId;
             var labName = firstSlot?.Room?.Lab?.Name;
 
-            return new EventDetail
+            var detail = new EventDetail
             {
                 Id = eventEntity.Id,
                 Title = eventEntity.Title,
@@ -132,6 +146,9 @@ namespace Application.Services.Event
                 RoomSlots = roomSlots,
                 ImageUrl = eventEntity.ImageUrl
             };
+
+            await _redis.SetAsync(cacheKey, detail, RedisCacheDefaults.DefaultTtl);
+            return detail;
         }
 
         private string GetDayOfWeekName(int dayOfWeek)
@@ -301,6 +318,7 @@ namespace Application.Services.Event
             await LogEventActionAsync(userId, eventEntity.Id, eventEntity.Title, "Create", 
                 $"Status: {initialStatus}, Role: {userRole}");
 
+            await InvalidateEventCaches(eventEntity.Id);
             return await GetEventByIdAsync(eventEntity.Id);
         }
 
@@ -382,6 +400,7 @@ namespace Application.Services.Event
             // Log edit event - AC-06
             await LogEventActionAsync(adminId, eventEntity.Id, eventEntity.Title, "Update", string.Join("; ", changes));
 
+            await InvalidateEventCaches(eventEntity.Id);
             return await GetEventByIdAsync(eventEntity.Id);
         }
 
@@ -414,6 +433,8 @@ namespace Application.Services.Event
 
             _db.Events.Remove(eventEntity);
             await _db.SaveChangesAsync();
+
+            await InvalidateEventCaches(eventEntity.Id);
         }
 
         public async Task<IReadOnlyList<EventListItem>> GetUpcomingEventsAsync()
@@ -526,6 +547,7 @@ namespace Application.Services.Event
             await LogEventActionAsync(staffId, eventEntity.Id, eventEntity.Title, "Approve", 
                 $"Event approved. Note: {approvalNote ?? "N/A"}");
 
+            await InvalidateEventCaches(eventEntity.Id);
             return await GetEventByIdAsync(eventEntity.Id);
         }
 
@@ -566,6 +588,7 @@ namespace Application.Services.Event
             await LogEventActionAsync(staffId, eventEntity.Id, eventEntity.Title, "Reject", 
                 $"Event rejected. Reason: {rejectionReason}");
 
+            await InvalidateEventCaches(eventEntity.Id);
             return await GetEventByIdAsync(eventEntity.Id);
         }
 
@@ -609,6 +632,30 @@ namespace Application.Services.Event
         {
             return await _db.Events
                 .CountAsync(e => e.Status == EventStatus.Pending);
+        }
+
+        private static string BuildListCacheKey(EventFilterRequest? filter)
+        {
+            if (filter == null)
+            {
+                return "events:list:v1";
+            }
+
+            return RedisCacheKeyBuilder.Build(
+                "events:list:v1",
+                ("title", filter.Title),
+                ("status", filter.Status),
+                ("startFrom", filter.StartDateFrom),
+                ("startTo", filter.StartDateTo),
+                ("upcoming", filter.IsUpcoming),
+                ("page", filter.Page),
+                ("pageSize", filter.PageSize));
+        }
+
+        private async Task InvalidateEventCaches(Guid eventId)
+        {
+            await _redis.RemoveAsync("events:list:v1");
+            await _redis.RemoveAsync(RedisCacheKeyBuilder.Build("events:detail:v1", ("id", eventId)));
         }
 
         private async Task SendEventNotificationAsync(Guid eventId, string title, string content)

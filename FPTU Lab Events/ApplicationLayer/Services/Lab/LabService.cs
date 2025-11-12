@@ -1,6 +1,7 @@
 using Application.DTOs.Lab;
 using DomainLayer.Entities;
 using DomainLayer.Enum;
+using InfrastructureLayer.Core.Redis;
 using InfrastructureLayer.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -9,14 +10,20 @@ namespace Application.Services.Lab
     public class LabService : ILabService
     {
         private readonly LabDbContext _db;
+        private readonly IRedisService _redis;
 
-        public LabService(LabDbContext db)
+        public LabService(LabDbContext db, IRedisService redis)
         {
             _db = db;
+            _redis = redis;
         }
 
         public async Task<IReadOnlyList<LabListItem>> GetAllLabsAsync(LabFilterRequest? filter = null)
         {
+            var cacheKey = BuildLabListCacheKey(filter);
+            var cached = await _redis.GetAsync<IReadOnlyList<LabListItem>>(cacheKey);
+            if (cached != null) return cached;
+
             var query = _db.Labs
                 .Include(l => l.Members)
                     .ThenInclude(m => m.User)
@@ -45,7 +52,7 @@ namespace Application.Services.Lab
 
             var labs = await query.ToListAsync();
 
-            return labs.Select(l => new LabListItem
+            var result = labs.Select(l => new LabListItem
             {
                 Id = l.Id,
                 Name = l.Name,
@@ -56,10 +63,17 @@ namespace Application.Services.Lab
                 EquipmentCount = 0, // Will be calculated separately if needed
                 ActiveBookings = 0 // Will be calculated separately if needed
             }).ToList();
+
+            await _redis.SetAsync(cacheKey, result, RedisCacheDefaults.DefaultTtl);
+            return result;
         }
 
         public async Task<LabDetail> GetLabByIdAsync(Guid id)
         {
+            var cacheKey = RedisCacheKeyBuilder.Build("labs:detail:v1", ("id", id));
+            var cached = await _redis.GetAsync<LabDetail>(cacheKey);
+            if (cached != null) return cached;
+
             var lab = await _db.Labs
                 .Include(l => l.Members.Where(m => m.Status == LabMemberStatus.Active))
                     .ThenInclude(m => m.User)
@@ -107,7 +121,7 @@ namespace Application.Services.Lab
                 Status = r.Status.ToString()
             }).ToList();
 
-            return new LabDetail
+            var detail = new LabDetail
             {
                 Id = lab.Id,
                 Name = lab.Name,
@@ -124,6 +138,9 @@ namespace Application.Services.Lab
                 Equipments = equipments,
                 RecentBookings = recentBookings
             };
+
+            await _redis.SetAsync(cacheKey, detail, RedisCacheDefaults.DefaultTtl);
+            return detail;
         }
 
         public async Task<LabDetail> CreateLabAsync(CreateLabRequest request, Guid adminId)
@@ -190,6 +207,7 @@ namespace Application.Services.Lab
                 : null;
             await LogLabActionAsync(adminId, lab.Id, lab.Name, "Create", roomInfo);
 
+            await InvalidateLabCaches(lab.Id);
             return await GetLabByIdAsync(lab.Id);
         }
 
@@ -286,6 +304,7 @@ namespace Application.Services.Lab
             // Log edit event - AC-05
             await LogLabActionAsync(adminId, lab.Id, lab.Name, "Update", string.Join("; ", changes));
 
+            await InvalidateLabCaches(lab.Id);
             return await GetLabByIdAsync(lab.Id);
         }
 
@@ -301,6 +320,7 @@ namespace Application.Services.Lab
             _db.Labs.Update(lab);
             await _db.SaveChangesAsync();
 
+            await InvalidateLabCaches(lab.Id);
             return await GetLabByIdAsync(lab.Id);
         }
 
@@ -336,17 +356,23 @@ namespace Application.Services.Lab
 
             _db.Labs.Remove(lab);
             await _db.SaveChangesAsync();
+
+            await InvalidateLabCaches(lab.Id);
         }
 
         public async Task<IReadOnlyList<LabListItem>> GetAvailableLabsAsync()
         {
+            const string cacheKey = "labs:available:v1";
+            var cached = await _redis.GetAsync<IReadOnlyList<LabListItem>>(cacheKey);
+            if (cached != null) return cached;
+
             var labs = await _db.Labs
                 .Include(l => l.Members)
                 .Include(l => l.Rooms)
                 .Where(l => l.Status == LabStatus.Active)
                 .ToListAsync();
 
-            return labs.Select(l => new LabListItem
+            var result = labs.Select(l => new LabListItem
             {
                 Id = l.Id,
                 Name = l.Name,
@@ -357,25 +383,46 @@ namespace Application.Services.Lab
                 EquipmentCount = 0,
                 ActiveBookings = 0
             }).ToList();
+
+            await _redis.SetAsync(cacheKey, result, RedisCacheDefaults.DefaultTtl);
+            return result;
         }
 
         public async Task<bool> IsLabAvailableAsync(Guid labId)
         {
+            var cacheKey = RedisCacheKeyBuilder.Build("labs:availability:v1", ("labId", labId));
+            var cached = await _redis.GetAsync<bool?>(cacheKey);
+            if (cached.HasValue) return cached.Value;
+
             var lab = await _db.Labs
                 .FirstOrDefaultAsync(l => l.Id == labId);
 
-            return lab != null && lab.Status == LabStatus.Active;
+            var isActive = lab != null && lab.Status == LabStatus.Active;
+            await _redis.SetAsync(cacheKey, isActive, RedisCacheDefaults.DefaultTtl);
+            return isActive;
         }
 
         public async Task<int> GetLabCountAsync()
         {
-            return await _db.Labs.CountAsync();
+            const string cacheKey = "labs:count:v1";
+            var cached = await _redis.GetAsync<int?>(cacheKey);
+            if (cached.HasValue) return cached.Value;
+
+            var count = await _db.Labs.CountAsync();
+            await _redis.SetAsync(cacheKey, count, RedisCacheDefaults.DefaultTtl);
+            return count;
         }
 
         public async Task<int> GetActiveLabCountAsync()
         {
-            return await _db.Labs
+            const string cacheKey = "labs:active-count:v1";
+            var cached = await _redis.GetAsync<int?>(cacheKey);
+            if (cached.HasValue) return cached.Value;
+
+            var count = await _db.Labs
                 .CountAsync(l => l.Status == LabStatus.Active);
+            await _redis.SetAsync(cacheKey, count, RedisCacheDefaults.DefaultTtl);
+            return count;
         }
 
         private async Task LogLabActionAsync(Guid adminId, Guid labId, string labName, string action, string? changes)
@@ -392,6 +439,32 @@ namespace Application.Services.Lab
                             $"Action: {action} - " +
                             $"Lab: {labName} ({labId}) - " +
                             $"Changes: {changes ?? "N/A"}");
+        }
+
+        private static string BuildLabListCacheKey(LabFilterRequest? filter)
+        {
+            if (filter == null)
+            {
+                return "labs:list:v1";
+            }
+
+            return RedisCacheKeyBuilder.Build(
+                "labs:list:v1",
+                ("name", filter.Name),
+                ("location", filter.Location),
+                ("status", filter.Status),
+                ("page", filter.Page),
+                ("pageSize", filter.PageSize));
+        }
+
+        private async Task InvalidateLabCaches(Guid labId)
+        {
+            await _redis.RemoveAsync("labs:list:v1");
+            await _redis.RemoveAsync("labs:available:v1");
+            await _redis.RemoveAsync("labs:count:v1");
+            await _redis.RemoveAsync("labs:active-count:v1");
+            await _redis.RemoveAsync(RedisCacheKeyBuilder.Build("labs:detail:v1", ("id", labId)));
+            await _redis.RemoveAsync(RedisCacheKeyBuilder.Build("labs:availability:v1", ("labId", labId)));
         }
     }
 }

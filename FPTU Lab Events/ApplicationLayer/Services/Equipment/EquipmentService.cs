@@ -1,6 +1,7 @@
 using Application.DTOs.Equipment;
 using DomainLayer.Entities;
 using DomainLayer.Enum;
+using InfrastructureLayer.Core.Redis;
 using InfrastructureLayer.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -9,14 +10,20 @@ namespace Application.Services.Equipment
     public class EquipmentService : IEquipmentService
     {
         private readonly LabDbContext _db;
+        private readonly IRedisService _redis;
 
-        public EquipmentService(LabDbContext db)
+        public EquipmentService(LabDbContext db, IRedisService redis)
         {
             _db = db;
+            _redis = redis;
         }
 
         public async Task<IReadOnlyList<EquipmentListItem>> GetAllEquipmentsAsync(EquipmentFilterRequest? filter = null)
         {
+            var cacheKey = BuildEquipmentListCacheKey(filter);
+            var cached = await _redis.GetAsync<IReadOnlyList<EquipmentListItem>>(cacheKey);
+            if (cached != null) return cached;
+
             var query = _db.Equipments
                 .Include(e => e.Room)
                 .AsQueryable();
@@ -49,7 +56,7 @@ namespace Application.Services.Equipment
 
             var equipments = await query.ToListAsync();
 
-            return equipments.Select(e => new EquipmentListItem
+            var result = equipments.Select(e => new EquipmentListItem
             {
                 Id = e.Id,
                 Name = e.Name,
@@ -62,16 +69,23 @@ namespace Application.Services.Equipment
                 LastMaintenanceDate = e.LastMaintenanceDate,
                 NextMaintenanceDate = e.NextMaintenanceDate
             }).ToList();
+
+            await _redis.SetAsync(cacheKey, result, RedisCacheDefaults.DefaultTtl);
+            return result;
         }
 
         public async Task<EquipmentDetail> GetEquipmentByIdAsync(Guid id)
         {
+            var cacheKey = RedisCacheKeyBuilder.Build("equipments:detail:v1", ("id", id));
+            var cached = await _redis.GetAsync<EquipmentDetail>(cacheKey);
+            if (cached != null) return cached;
+
             var equipment = await _db.Equipments
                 .Include(e => e.Room)
                 .FirstOrDefaultAsync(e => e.Id == id)
                 ?? throw new Exception("Equipment not found");
 
-            return new EquipmentDetail
+            var detail = new EquipmentDetail
             {
                 Id = equipment.Id,
                 Name = equipment.Name,
@@ -87,6 +101,9 @@ namespace Application.Services.Equipment
                 CreatedAt = equipment.CreatedAt,
                 LastUpdatedAt = equipment.LastUpdatedAt
             };
+
+            await _redis.SetAsync(cacheKey, detail, RedisCacheDefaults.DefaultTtl);
+            return detail;
         }
 
         public async Task<EquipmentDetail> CreateEquipmentAsync(CreateEquipmentRequest request)
@@ -127,6 +144,7 @@ namespace Application.Services.Equipment
             _db.Equipments.Add(equipment);
             await _db.SaveChangesAsync();
 
+            await InvalidateEquipmentCaches(equipment.Id, equipment.RoomId);
             return await GetEquipmentByIdAsync(equipment.Id);
         }
 
@@ -135,6 +153,8 @@ namespace Application.Services.Equipment
             var equipment = await _db.Equipments
                 .FirstOrDefaultAsync(e => e.Id == id)
                 ?? throw new Exception("Equipment not found");
+
+            var previousRoomId = equipment.RoomId;
 
             // Check if serial number already exists (if changed)
             if (!string.IsNullOrWhiteSpace(request.SerialNumber) && request.SerialNumber != equipment.SerialNumber)
@@ -184,6 +204,7 @@ namespace Application.Services.Equipment
             _db.Equipments.Update(equipment);
             await _db.SaveChangesAsync();
 
+            await InvalidateEquipmentCaches(equipment.Id, equipment.RoomId, previousRoomId);
             return await GetEquipmentByIdAsync(equipment.Id);
         }
 
@@ -199,6 +220,7 @@ namespace Application.Services.Equipment
             _db.Equipments.Update(equipment);
             await _db.SaveChangesAsync();
 
+            await InvalidateEquipmentCaches(equipment.Id, equipment.RoomId);
             return await GetEquipmentByIdAsync(equipment.Id);
         }
 
@@ -214,17 +236,23 @@ namespace Application.Services.Equipment
 
             _db.Equipments.Remove(equipment);
             await _db.SaveChangesAsync();
+
+            await InvalidateEquipmentCaches(equipment.Id, equipment.RoomId);
         }
 
         public async Task<IReadOnlyList<EquipmentListItem>> GetEquipmentsByRoomAsync(Guid roomId)
         {
+            var cacheKey = RedisCacheKeyBuilder.Build("equipments:by-room:v1", ("roomId", roomId));
+            var cached = await _redis.GetAsync<IReadOnlyList<EquipmentListItem>>(cacheKey);
+            if (cached != null) return cached;
+
             var equipments = await _db.Equipments
                 .Include(e => e.Room)
                 .Where(e => e.RoomId == roomId)
                 .OrderBy(e => e.Name)
                 .ToListAsync();
 
-            return equipments.Select(e => new EquipmentListItem
+            var result = equipments.Select(e => new EquipmentListItem
             {
                 Id = e.Id,
                 Name = e.Name,
@@ -237,17 +265,24 @@ namespace Application.Services.Equipment
                 LastMaintenanceDate = e.LastMaintenanceDate,
                 NextMaintenanceDate = e.NextMaintenanceDate
             }).ToList();
+
+            await _redis.SetAsync(cacheKey, result, RedisCacheDefaults.DefaultTtl);
+            return result;
         }
 
         public async Task<IReadOnlyList<EquipmentListItem>> GetAvailableEquipmentsAsync()
         {
+            const string cacheKey = "equipments:available:v1";
+            var cached = await _redis.GetAsync<IReadOnlyList<EquipmentListItem>>(cacheKey);
+            if (cached != null) return cached;
+
             var equipments = await _db.Equipments
                 .Include(e => e.Room)
                 .Where(e => e.Status == EquipmentStatus.Available)
                 .OrderBy(e => e.Name)
                 .ToListAsync();
 
-            return equipments.Select(e => new EquipmentListItem
+            var result = equipments.Select(e => new EquipmentListItem
             {
                 Id = e.Id,
                 Name = e.Name,
@@ -260,29 +295,49 @@ namespace Application.Services.Equipment
                 LastMaintenanceDate = e.LastMaintenanceDate,
                 NextMaintenanceDate = e.NextMaintenanceDate
             }).ToList();
+
+            await _redis.SetAsync(cacheKey, result, RedisCacheDefaults.DefaultTtl);
+            return result;
         }
 
         public async Task<int> GetEquipmentCountAsync()
         {
-            return await _db.Equipments.CountAsync();
+            const string cacheKey = "equipments:count:v1";
+            var cached = await _redis.GetAsync<int?>(cacheKey);
+            if (cached.HasValue) return cached.Value;
+
+            var count = await _db.Equipments.CountAsync();
+            await _redis.SetAsync(cacheKey, count, RedisCacheDefaults.DefaultTtl);
+            return count;
         }
 
         public async Task<int> GetAvailableEquipmentCountAsync()
         {
-            return await _db.Equipments
+            const string cacheKey = "equipments:available-count:v1";
+            var cached = await _redis.GetAsync<int?>(cacheKey);
+            if (cached.HasValue) return cached.Value;
+
+            var count = await _db.Equipments
                 .CountAsync(e => e.Status == EquipmentStatus.Available);
+            await _redis.SetAsync(cacheKey, count, RedisCacheDefaults.DefaultTtl);
+            return count;
         }
 
         public async Task<IReadOnlyList<EquipmentListItem>> GetEquipmentsNeedingMaintenanceAsync()
         {
             var now = DateTime.UtcNow;
+            var roundedKeyTime = new DateTime(now.Year, now.Month, now.Day, now.Hour, 0, 0, DateTimeKind.Utc);
+            var cacheKey = RedisCacheKeyBuilder.Build("equipments:maintenance:v1", ("untilHour", roundedKeyTime));
+            var cached = await _redis.GetAsync<IReadOnlyList<EquipmentListItem>>(cacheKey);
+            if (cached != null) return cached;
+
             var equipments = await _db.Equipments
                 .Include(e => e.Room)
                 .Where(e => e.NextMaintenanceDate.HasValue && e.NextMaintenanceDate <= now)
                 .OrderBy(e => e.NextMaintenanceDate)
                 .ToListAsync();
 
-            return equipments.Select(e => new EquipmentListItem
+            var result = equipments.Select(e => new EquipmentListItem
             {
                 Id = e.Id,
                 Name = e.Name,
@@ -295,6 +350,47 @@ namespace Application.Services.Equipment
                 LastMaintenanceDate = e.LastMaintenanceDate,
                 NextMaintenanceDate = e.NextMaintenanceDate
             }).ToList();
+
+            await _redis.SetAsync(cacheKey, result, RedisCacheDefaults.DefaultTtl);
+            return result;
+        }
+
+        private static string BuildEquipmentListCacheKey(EquipmentFilterRequest? filter)
+        {
+            if (filter == null)
+            {
+                return "equipments:list:v1";
+            }
+
+            return RedisCacheKeyBuilder.Build(
+                "equipments:list:v1",
+                ("name", filter.Name),
+                ("serial", filter.SerialNumber),
+                ("type", filter.Type),
+                ("status", filter.Status),
+                ("roomId", filter.RoomId),
+                ("page", filter.Page),
+                ("pageSize", filter.PageSize));
+        }
+
+        private async Task InvalidateEquipmentCaches(Guid equipmentId, Guid? currentRoomId = null, Guid? previousRoomId = null)
+        {
+            await _redis.RemoveAsync("equipments:list:v1");
+            await _redis.RemoveAsync("equipments:available:v1");
+            await _redis.RemoveAsync("equipments:count:v1");
+            await _redis.RemoveAsync("equipments:available-count:v1");
+            await _redis.RemoveAsync("equipments:maintenance:v1");
+            await _redis.RemoveAsync(RedisCacheKeyBuilder.Build("equipments:detail:v1", ("id", equipmentId)));
+
+            if (currentRoomId.HasValue)
+            {
+                await _redis.RemoveAsync(RedisCacheKeyBuilder.Build("equipments:by-room:v1", ("roomId", currentRoomId.Value)));
+            }
+
+            if (previousRoomId.HasValue && previousRoomId != currentRoomId)
+            {
+                await _redis.RemoveAsync(RedisCacheKeyBuilder.Build("equipments:by-room:v1", ("roomId", previousRoomId.Value)));
+            }
         }
     }
 }

@@ -1,6 +1,7 @@
 using Application.DTOs.Notification;
 using DomainLayer.Entities;
 using DomainLayer.Enum;
+using InfrastructureLayer.Core.Redis;
 using InfrastructureLayer.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -9,14 +10,20 @@ namespace Application.Services.Notification
     public class NotificationService : INotificationService
     {
         private readonly LabDbContext _db;
+        private readonly IRedisService _redis;
 
-        public NotificationService(LabDbContext db)
+        public NotificationService(LabDbContext db, IRedisService redis)
         {
             _db = db;
+            _redis = redis;
         }
 
         public async Task<IReadOnlyList<NotificationListItem>> GetAllNotificationsAsync(NotificationFilterRequest? filter = null)
         {
+            var cacheKey = BuildNotificationListCacheKey(filter);
+            var cached = await _redis.GetAsync<IReadOnlyList<NotificationListItem>>(cacheKey);
+            if (cached != null) return cached;
+
             var query = _db.Notifications
                 .Include(n => n.CreatedByUser)
                 .AsQueryable();
@@ -46,7 +53,7 @@ namespace Application.Services.Notification
 
             var notifications = await query.ToListAsync();
 
-            return notifications.Select(n => new NotificationListItem
+            var result = notifications.Select(n => new NotificationListItem
             {
                 Id = n.Id,
                 Title = n.Title,
@@ -59,10 +66,17 @@ namespace Application.Services.Notification
                 CreatedBy = n.CreatedByUser.Username,
                 IsRead = false // Will be updated based on user context
             }).ToList();
+
+            await _redis.SetAsync(cacheKey, result, RedisCacheDefaults.DefaultTtl);
+            return result;
         }
 
         public async Task<NotificationDetail> GetNotificationByIdAsync(Guid id)
         {
+            var cacheKey = RedisCacheKeyBuilder.Build("notifications:detail:v1", ("id", id));
+            var cached = await _redis.GetAsync<NotificationDetail>(cacheKey);
+            if (cached != null) return cached;
+
             var notification = await _db.Notifications
                 .Include(n => n.CreatedByUser)
                 .Include(n => n.NotificationReads)
@@ -74,7 +88,7 @@ namespace Application.Services.Notification
 
             var unreadCount = await GetUnreadCountForNotificationAsync(id);
 
-            return new NotificationDetail
+            var detail = new NotificationDetail
             {
                 Id = notification.Id,
                 Title = notification.Title,
@@ -90,6 +104,9 @@ namespace Application.Services.Notification
                 TotalReaders = totalReaders,
                 UnreadCount = unreadCount
             };
+
+            await _redis.SetAsync(cacheKey, detail, RedisCacheDefaults.DefaultTtl);
+            return detail;
         }
 
         public async Task<NotificationDetail> CreateNotificationAsync(CreateNotificationRequest request, Guid adminId)
@@ -114,6 +131,7 @@ namespace Application.Services.Notification
             _db.Notifications.Add(notification);
             await _db.SaveChangesAsync();
 
+            await InvalidateNotificationCaches(notification.Id);
             return await GetNotificationByIdAsync(notification.Id);
         }
 
@@ -142,6 +160,7 @@ namespace Application.Services.Notification
             _db.Notifications.Update(notification);
             await _db.SaveChangesAsync();
 
+            await InvalidateNotificationCaches(notification.Id);
             return await GetNotificationByIdAsync(notification.Id);
         }
 
@@ -153,6 +172,8 @@ namespace Application.Services.Notification
 
             _db.Notifications.Remove(notification);
             await _db.SaveChangesAsync();
+
+            await InvalidateNotificationCaches(notification.Id);
         }
 
         public async Task<IReadOnlyList<NotificationListItem>> GetUserNotificationsAsync(Guid userId, NotificationFilterRequest? filter = null)
@@ -169,6 +190,10 @@ namespace Application.Services.Notification
                 targetGroups.Add("Lecturer");
             if (userRoles.Contains("Student"))
                 targetGroups.Add("Student");
+
+            var cacheKey = BuildUserNotificationCacheKey(userId, filter);
+            var cached = await _redis.GetAsync<IReadOnlyList<NotificationListItem>>(cacheKey);
+            if (cached != null) return cached;
 
             var query = _db.Notifications
                 .Include(n => n.CreatedByUser)
@@ -204,7 +229,7 @@ namespace Application.Services.Notification
 
             var notifications = await query.ToListAsync();
 
-            return notifications.Select(n => new NotificationListItem
+            var result = notifications.Select(n => new NotificationListItem
             {
                 Id = n.Id,
                 Title = n.Title,
@@ -217,6 +242,9 @@ namespace Application.Services.Notification
                 CreatedBy = n.CreatedByUser.Username,
                 IsRead = n.NotificationReads.Any()
             }).ToList();
+
+            await _redis.SetAsync(cacheKey, result, RedisCacheDefaults.DefaultTtl);
+            return result;
         }
 
         public async Task MarkAsReadAsync(Guid notificationId, Guid userId)
@@ -238,6 +266,9 @@ namespace Application.Services.Notification
 
                 _db.NotificationReads.Add(notificationRead);
                 await _db.SaveChangesAsync();
+
+                await InvalidateNotificationUserCaches(userId);
+                await InvalidateNotificationCaches(notificationId);
             }
         }
 
@@ -277,6 +308,12 @@ namespace Application.Services.Notification
 
             _db.NotificationReads.AddRange(notificationReads);
             await _db.SaveChangesAsync();
+
+            await InvalidateNotificationUserCaches(userId);
+            foreach (var notificationId in unreadNotifications)
+            {
+                await InvalidateNotificationCaches(notificationId);
+            }
         }
 
         public async Task UpdateNotificationStatusAsync()
@@ -296,6 +333,11 @@ namespace Application.Services.Notification
 
             _db.Notifications.UpdateRange(expiredNotifications);
             await _db.SaveChangesAsync();
+
+            foreach (var notification in expiredNotifications)
+            {
+                await InvalidateNotificationCaches(notification.Id);
+            }
         }
 
         public async Task<int> GetUnreadCountAsync(Guid userId)
@@ -313,13 +355,72 @@ namespace Application.Services.Notification
             if (userRoles.Contains("Student"))
                 targetGroups.Add("Student");
 
-            return await _db.Notifications
+            var cacheKey = BuildUnreadCountCacheKey(userId);
+            var cached = await _redis.GetAsync<int?>(cacheKey);
+            if (cached.HasValue) return cached.Value;
+
+            var count = await _db.Notifications
                 .Where(n => targetGroups.Contains(n.TargetGroup) && 
                            n.Status == NotificationStatus.Active &&
                            n.StartDate <= DateTime.UtcNow &&
                            n.EndDate >= DateTime.UtcNow &&
                            !n.NotificationReads.Any(nr => nr.UserId == userId))
                 .CountAsync();
+
+            await _redis.SetAsync(cacheKey, count, RedisCacheDefaults.DefaultTtl);
+            return count;
+        }
+
+        private static string BuildNotificationListCacheKey(NotificationFilterRequest? filter)
+        {
+            if (filter == null)
+            {
+                return "notifications:list:v1";
+            }
+
+            return RedisCacheKeyBuilder.Build(
+                "notifications:list:v1",
+                ("target", filter.TargetGroup),
+                ("status", filter.Status),
+                ("start", filter.StartDate),
+                ("end", filter.EndDate),
+                ("page", filter.Page),
+                ("pageSize", filter.PageSize));
+        }
+
+        private static string BuildUserNotificationCacheKey(Guid userId, NotificationFilterRequest? filter)
+        {
+            if (filter == null)
+            {
+                return RedisCacheKeyBuilder.Build("notifications:user-list:v1", ("userId", userId));
+            }
+
+            return RedisCacheKeyBuilder.Build(
+                "notifications:user-list:v1",
+                ("userId", userId),
+                ("target", filter.TargetGroup),
+                ("status", filter.Status),
+                ("start", filter.StartDate),
+                ("end", filter.EndDate),
+                ("page", filter.Page),
+                ("pageSize", filter.PageSize));
+        }
+
+        private static string BuildUnreadCountCacheKey(Guid userId)
+        {
+            return RedisCacheKeyBuilder.Build("notifications:unread-count:v1", ("userId", userId));
+        }
+
+        private async Task InvalidateNotificationCaches(Guid notificationId)
+        {
+            await _redis.RemoveAsync("notifications:list:v1");
+            await _redis.RemoveAsync(RedisCacheKeyBuilder.Build("notifications:detail:v1", ("id", notificationId)));
+        }
+
+        private async Task InvalidateNotificationUserCaches(Guid userId)
+        {
+            await _redis.RemoveAsync(RedisCacheKeyBuilder.Build("notifications:user-list:v1", ("userId", userId)));
+            await _redis.RemoveAsync(RedisCacheKeyBuilder.Build("notifications:unread-count:v1", ("userId", userId)));
         }
 
         private async Task<int> GetUnreadCountForNotificationAsync(Guid notificationId)

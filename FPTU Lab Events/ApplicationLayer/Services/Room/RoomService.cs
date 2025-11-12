@@ -1,6 +1,7 @@
 using Application.DTOs.Room;
 using DomainLayer.Entities;
 using DomainLayer.Enum;
+using InfrastructureLayer.Core.Redis;
 using InfrastructureLayer.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -9,14 +10,20 @@ namespace Application.Services.Room
     public class RoomService : IRoomService
     {
         private readonly LabDbContext _db;
+        private readonly IRedisService _redis;
 
-        public RoomService(LabDbContext db)
+        public RoomService(LabDbContext db, IRedisService redis)
         {
             _db = db;
+            _redis = redis;
         }
 
         public async Task<IReadOnlyList<RoomListItem>> GetAllRoomsAsync(RoomFilterRequest? filter = null)
         {
+            var cacheKey = BuildRoomListCacheKey(filter);
+            var cached = await _redis.GetAsync<IReadOnlyList<RoomListItem>>(cacheKey);
+            if (cached != null) return cached;
+
             var query = _db.Rooms
                 .Include(r => r.Equipments)
                 .Include(r => r.Bookings.Where(b => b.Status == BookingStatus.Approved))
@@ -52,7 +59,7 @@ namespace Application.Services.Room
                 .Include(r => r.Lab)
                 .ToListAsync();
 
-            return rooms.Select(r => new RoomListItem
+            var result = rooms.Select(r => new RoomListItem
             {
                 Id = r.Id,
                 Name = r.Name,
@@ -63,10 +70,17 @@ namespace Application.Services.Room
                 EquipmentCount = r.Equipments.Count,
                 ActiveBookings = r.Bookings.Count(b => b.StartTime <= DateTime.UtcNow && b.EndTime >= DateTime.UtcNow)
             }).ToList();
+
+            await _redis.SetAsync(cacheKey, result, RedisCacheDefaults.DefaultTtl);
+            return result;
         }
 
         public async Task<RoomDetail> GetRoomByIdAsync(Guid id)
         {
+            var cacheKey = RedisCacheKeyBuilder.Build("rooms:detail:v1", ("id", id));
+            var cached = await _redis.GetAsync<RoomDetail>(cacheKey);
+            if (cached != null) return cached;
+
             var room = await _db.Rooms
                 .Include(r => r.Lab)
                 .Include(r => r.Equipments)
@@ -117,7 +131,7 @@ namespace Application.Services.Room
                     Status = rs.Status
                 }).ToList();
 
-            return new RoomDetail
+            var detail = new RoomDetail
             {
                 Id = room.Id,
                 Name = room.Name,
@@ -133,6 +147,9 @@ namespace Application.Services.Room
                 RecentBookings = recentBookings,
                 RoomSlots = roomSlots
             };
+
+            await _redis.SetAsync(cacheKey, detail, RedisCacheDefaults.DefaultTtl);
+            return detail;
         }
 
         private string GetDayOfWeekName(int dayOfWeek)
@@ -174,6 +191,7 @@ namespace Application.Services.Room
             _db.Rooms.Add(room);
             await _db.SaveChangesAsync();
 
+            await InvalidateRoomCaches(room.Id);
             return await GetRoomByIdAsync(room.Id);
         }
 
@@ -204,6 +222,7 @@ namespace Application.Services.Room
             _db.Rooms.Update(room);
             await _db.SaveChangesAsync();
 
+            await InvalidateRoomCaches(room.Id);
             return await GetRoomByIdAsync(room.Id);
         }
 
@@ -219,6 +238,7 @@ namespace Application.Services.Room
             _db.Rooms.Update(room);
             await _db.SaveChangesAsync();
 
+            await InvalidateRoomCaches(room.Id);
             return await GetRoomByIdAsync(room.Id);
         }
 
@@ -240,10 +260,19 @@ namespace Application.Services.Room
 
             _db.Rooms.Remove(room);
             await _db.SaveChangesAsync();
+
+            await InvalidateRoomCaches(room.Id);
         }
 
         public async Task<IReadOnlyList<RoomListItem>> GetAvailableRoomsAsync(DateTime startTime, DateTime endTime)
         {
+            var cacheKey = RedisCacheKeyBuilder.Build(
+                "rooms:available:v1",
+                ("start", startTime),
+                ("end", endTime));
+            var cached = await _redis.GetAsync<IReadOnlyList<RoomListItem>>(cacheKey);
+            if (cached != null) return cached;
+
             var rooms = await _db.Rooms
                 .Include(r => r.Bookings)
                 .Where(r => r.Status == RoomStatus.Available)
@@ -256,7 +285,7 @@ namespace Application.Services.Room
                  (b.StartTime >= startTime && b.EndTime <= endTime))))
                 .ToList();
 
-            return availableRooms.Select(r => new RoomListItem
+            var result = availableRooms.Select(r => new RoomListItem
             {
                 Id = r.Id,
                 Name = r.Name,
@@ -265,45 +294,78 @@ namespace Application.Services.Room
                 EquipmentCount = r.Equipments.Count,
                 ActiveBookings = 0
             }).ToList();
+
+            await _redis.SetAsync(cacheKey, result, RedisCacheDefaults.DefaultTtl);
+            return result;
         }
 
         public async Task<bool> IsRoomAvailableAsync(Guid roomId, DateTime startTime, DateTime endTime)
         {
+            var cacheKey = RedisCacheKeyBuilder.Build(
+                "rooms:availability:v1",
+                ("roomId", roomId),
+                ("start", startTime),
+                ("end", endTime));
+            var cached = await _redis.GetAsync<bool?>(cacheKey);
+            if (cached.HasValue) return cached.Value;
+
             var room = await _db.Rooms
                 .Include(r => r.Bookings)
                 .FirstOrDefaultAsync(r => r.Id == roomId);
 
             if (room == null || room.Status != RoomStatus.Available)
+            {
+                await _redis.SetAsync(cacheKey, false, RedisCacheDefaults.DefaultTtl);
                 return false;
+            }
 
-            return !room.Bookings.Any(b => 
+            var isAvailable = !room.Bookings.Any(b => 
                 b.Status == BookingStatus.Approved &&
                 ((b.StartTime <= startTime && b.EndTime > startTime) ||
                  (b.StartTime < endTime && b.EndTime >= endTime) ||
                  (b.StartTime >= startTime && b.EndTime <= endTime)));
+
+            await _redis.SetAsync(cacheKey, isAvailable, RedisCacheDefaults.DefaultTtl);
+            return isAvailable;
         }
 
         public async Task<int> GetRoomCountAsync()
         {
-            return await _db.Rooms.CountAsync();
+            const string cacheKey = "rooms:count:v1";
+            var cached = await _redis.GetAsync<int?>(cacheKey);
+            if (cached.HasValue) return cached.Value;
+
+            var count = await _db.Rooms.CountAsync();
+            await _redis.SetAsync(cacheKey, count, RedisCacheDefaults.DefaultTtl);
+            return count;
         }
 
         public async Task<int> GetAvailableRoomCountAsync()
         {
-            return await _db.Rooms
+            const string cacheKey = "rooms:available-count:v1";
+            var cached = await _redis.GetAsync<int?>(cacheKey);
+            if (cached.HasValue) return cached.Value;
+
+            var count = await _db.Rooms
                 .CountAsync(r => r.Status == RoomStatus.Available);
+            await _redis.SetAsync(cacheKey, count, RedisCacheDefaults.DefaultTtl);
+            return count;
         }
 
         // RoomSlot Management Methods
         public async Task<RoomSlotInfo> GetRoomSlotByIdAsync(Guid slotId)
         {
+            var cacheKey = RedisCacheKeyBuilder.Build("rooms:slots:detail:v1", ("slotId", slotId));
+            var cached = await _redis.GetAsync<RoomSlotInfo>(cacheKey);
+            if (cached != null) return cached;
+
             var slot = await _db.RoomSlots
                 .Include(rs => rs.Event)
                 .Include(rs => rs.Room)
                 .FirstOrDefaultAsync(rs => rs.Id == slotId)
                 ?? throw new Exception("RoomSlot not found");
 
-            return new RoomSlotInfo
+            var detail = new RoomSlotInfo
             {
                 Id = slot.Id,
                 Date = slot.Date.Date,
@@ -319,10 +381,17 @@ namespace Application.Services.Room
                 EventCode = slot.Event?.Title,
                 Status = slot.Status
             };
+
+            await _redis.SetAsync(cacheKey, detail, RedisCacheDefaults.DefaultTtl);
+            return detail;
         }
 
         public async Task<IReadOnlyList<RoomSlotInfo>> GetRoomSlotsByRoomIdAsync(Guid roomId)
         {
+            var cacheKey = RedisCacheKeyBuilder.Build("rooms:slots:list:v1", ("roomId", roomId));
+            var cached = await _redis.GetAsync<IReadOnlyList<RoomSlotInfo>>(cacheKey);
+            if (cached != null) return cached;
+
             var slots = await _db.RoomSlots
                 .Include(rs => rs.Event)
                 .Where(rs => rs.RoomId == roomId)
@@ -330,7 +399,7 @@ namespace Application.Services.Room
                 .ThenBy(rs => rs.SlotNumber)
                 .ToListAsync();
 
-            return slots.Select(rs => new RoomSlotInfo
+            var result = slots.Select(rs => new RoomSlotInfo
             {
                 Id = rs.Id,
                 Date = rs.Date.Date,
@@ -346,10 +415,21 @@ namespace Application.Services.Room
                 EventCode = rs.Event?.Title,
                 Status = rs.Status
             }).ToList();
+
+            await _redis.SetAsync(cacheKey, result, RedisCacheDefaults.DefaultTtl);
+            return result;
         }
 
         public async Task<IReadOnlyList<RoomSlotInfo>> GetRoomSlotsByDateRangeAsync(Guid roomId, DateTime startDate, DateTime endDate)
         {
+            var cacheKey = RedisCacheKeyBuilder.Build(
+                "rooms:slots:range:v1",
+                ("roomId", roomId),
+                ("start", startDate),
+                ("end", endDate));
+            var cached = await _redis.GetAsync<IReadOnlyList<RoomSlotInfo>>(cacheKey);
+            if (cached != null) return cached;
+
             var slots = await _db.RoomSlots
                 .Include(rs => rs.Event)
                 .Where(rs => rs.RoomId == roomId && 
@@ -359,7 +439,7 @@ namespace Application.Services.Room
                 .ThenBy(rs => rs.SlotNumber)
                 .ToListAsync();
 
-            return slots.Select(rs => new RoomSlotInfo
+            var result = slots.Select(rs => new RoomSlotInfo
             {
                 Id = rs.Id,
                 Date = rs.Date.Date,
@@ -375,10 +455,21 @@ namespace Application.Services.Room
                 EventCode = rs.Event?.Title,
                 Status = rs.Status
             }).ToList();
+
+            await _redis.SetAsync(cacheKey, result, RedisCacheDefaults.DefaultTtl);
+            return result;
         }
 
         public async Task<IReadOnlyList<RoomSlotInfo>> GetAvailableRoomSlotsAsync(Guid roomId, DateTime? startDate = null, DateTime? endDate = null)
         {
+            var cacheKey = RedisCacheKeyBuilder.Build(
+                "rooms:slots:available:v1",
+                ("roomId", roomId),
+                ("start", startDate),
+                ("end", endDate));
+            var cached = await _redis.GetAsync<IReadOnlyList<RoomSlotInfo>>(cacheKey);
+            if (cached != null) return cached;
+
             // Validate room exists
             var room = await _db.Rooms.FindAsync(roomId);
             if (room == null)
@@ -400,7 +491,7 @@ namespace Application.Services.Room
                 .ThenBy(rs => rs.SlotNumber)
                 .ToListAsync();
 
-            return slots.Select(rs => new RoomSlotInfo
+            var result = slots.Select(rs => new RoomSlotInfo
             {
                 Id = rs.Id,
                 Date = rs.Date.Date,
@@ -416,6 +507,9 @@ namespace Application.Services.Room
                 EventCode = null,
                 Status = rs.Status
             }).ToList();
+
+            await _redis.SetAsync(cacheKey, result, RedisCacheDefaults.DefaultTtl);
+            return result;
         }
 
         public async Task<RoomSlotInfo> CreateRoomSlotAsync(CreateRoomSlotRequest request)
@@ -471,6 +565,7 @@ namespace Application.Services.Room
             _db.RoomSlots.Add(roomSlot);
             await _db.SaveChangesAsync();
 
+            await InvalidateRoomSlotCaches(roomSlot.RoomId, roomSlot.Id);
             return await GetRoomSlotByIdAsync(roomSlot.Id);
         }
 
@@ -566,6 +661,7 @@ namespace Application.Services.Room
             _db.RoomSlots.Update(roomSlot);
             await _db.SaveChangesAsync();
 
+            await InvalidateRoomSlotCaches(roomSlot.RoomId, roomSlot.Id);
             return await GetRoomSlotByIdAsync(slotId);
         }
 
@@ -576,6 +672,8 @@ namespace Application.Services.Room
 
             _db.RoomSlots.Remove(roomSlot);
             await _db.SaveChangesAsync();
+
+            await InvalidateRoomSlotCaches(roomSlot.RoomId, roomSlot.Id);
         }
 
         public async Task<IReadOnlyList<RoomSlotInfo>> GenerateWeeklyRoomSlotsAsync(Guid roomId, DateTime weekStartDate)
@@ -649,7 +747,48 @@ namespace Application.Services.Room
             }
 
             // Return all slots for this room
+            await InvalidateRoomSlotCaches(roomId);
             return await GetRoomSlotsByRoomIdAsync(roomId);
+        }
+
+        private static string BuildRoomListCacheKey(RoomFilterRequest? filter)
+        {
+            if (filter == null)
+            {
+                return "rooms:list:v1";
+            }
+
+            return RedisCacheKeyBuilder.Build(
+                "rooms:list:v1",
+                ("name", filter.Name),
+                ("status", filter.Status),
+                ("minCapacity", filter.MinCapacity),
+                ("maxCapacity", filter.MaxCapacity),
+                ("labId", filter.LabId),
+                ("page", filter.Page),
+                ("pageSize", filter.PageSize));
+        }
+
+        private async Task InvalidateRoomCaches(Guid roomId)
+        {
+            await _redis.RemoveAsync("rooms:list:v1");
+            await _redis.RemoveAsync(RedisCacheKeyBuilder.Build("rooms:detail:v1", ("id", roomId)));
+            await _redis.RemoveAsync("rooms:count:v1");
+            await _redis.RemoveAsync("rooms:available-count:v1");
+            await _redis.RemoveAsync("rooms:available:v1");
+            await _redis.RemoveAsync(RedisCacheKeyBuilder.Build("rooms:availability:v1", ("roomId", roomId)));
+        }
+
+        private async Task InvalidateRoomSlotCaches(Guid roomId, Guid? slotId = null)
+        {
+            await InvalidateRoomCaches(roomId);
+            await _redis.RemoveAsync(RedisCacheKeyBuilder.Build("rooms:slots:list:v1", ("roomId", roomId)));
+            await _redis.RemoveAsync(RedisCacheKeyBuilder.Build("rooms:slots:available:v1", ("roomId", roomId)));
+            await _redis.RemoveAsync(RedisCacheKeyBuilder.Build("rooms:slots:range:v1", ("roomId", roomId)));
+            if (slotId.HasValue)
+            {
+                await _redis.RemoveAsync(RedisCacheKeyBuilder.Build("rooms:slots:detail:v1", ("slotId", slotId.Value)));
+            }
         }
     }
 }

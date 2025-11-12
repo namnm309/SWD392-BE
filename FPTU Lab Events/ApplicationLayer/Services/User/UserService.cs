@@ -1,6 +1,7 @@
 using Application.DTOs.User;
 using DomainLayer.Entities;
 using DomainLayer.Enum;
+using InfrastructureLayer.Core.Redis;
 using InfrastructureLayer.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -9,17 +10,26 @@ namespace Application.Services.User;
 public class UserService : IUserService
 {
   private readonly LabDbContext _db;
-  public UserService(LabDbContext db) { _db = db; }
+  private readonly IRedisService _redis;
+  public UserService(LabDbContext db, IRedisService redis)
+  {
+    _db = db;
+    _redis = redis;
+  }
 
   public async Task<IReadOnlyList<UserListItem>> ListAsync(int? page = null, int? pageSize = null)
   {
+    var cacheKey = BuildUserListCacheKey(page, pageSize);
+    var cached = await _redis.GetAsync<IReadOnlyList<UserListItem>>(cacheKey);
+    if (cached != null) return cached;
+
     var query = _db.Users.Include(u => u.Roles).AsQueryable();
     if (page.HasValue && pageSize.HasValue)
     {
       query = query.Skip(page.Value * pageSize.Value).Take(pageSize.Value);
     }
     var list = await query.ToListAsync();
-    return list.Select(u => new UserListItem
+    var result = list.Select(u => new UserListItem
     {
       Id = u.Id,
       Email = u.Email,
@@ -28,13 +38,20 @@ public class UserService : IUserService
       Roles = u.Roles.Select(r => r.name).ToArray(),
       Status = u.status.ToString()
     }).ToList();
+
+    await _redis.SetAsync(cacheKey, result, RedisCacheDefaults.DefaultTtl);
+    return result;
   }
 
   public async Task<UserDetail> GetByIdAsync(Guid id)
   {
+    var cacheKey = RedisCacheKeyBuilder.Build("users:detail:v1", ("id", id));
+    var cached = await _redis.GetAsync<UserDetail>(cacheKey);
+    if (cached != null) return cached;
+
     var u = await _db.Users.Include(x => x.Roles).FirstOrDefaultAsync(x => x.Id == id)
       ?? throw new Exception("User not found");
-    return new UserDetail
+    var detail = new UserDetail
     {
       Id = u.Id,
       Email = u.Email,
@@ -44,6 +61,9 @@ public class UserService : IUserService
       Roles = u.Roles.Select(r => r.name).ToArray(),
       Status = u.status.ToString()
     };
+
+    await _redis.SetAsync(cacheKey, detail, RedisCacheDefaults.DefaultTtl);
+    return detail;
   }
 
   public async Task<UserDetail> CreateAsync(CreateUserRequest request)
@@ -80,6 +100,7 @@ public class UserService : IUserService
     _db.Users.Add(user);
     await _db.SaveChangesAsync();
 
+    await InvalidateUserCaches(user.Id);
     return await GetByIdAsync(user.Id);
   }
 
@@ -108,6 +129,7 @@ public class UserService : IUserService
     u.LastUpdatedAt = DateTime.UtcNow;
     await _db.SaveChangesAsync();
 
+    await InvalidateUserCaches(u.Id);
     return await GetByIdAsync(u.Id);
   }
 
@@ -117,6 +139,8 @@ public class UserService : IUserService
       ?? throw new Exception("User not found");
     _db.Users.Remove(u);
     await _db.SaveChangesAsync();
+
+    await InvalidateUserCaches(id);
   }
 
   public async Task<UserDetail> UpdateStatusAsync(Guid id, UpdateStatusRequest request)
@@ -126,6 +150,7 @@ public class UserService : IUserService
     u.status = Enum.Parse<UserStatus>(request.Status, true);
     u.LastUpdatedAt = DateTime.UtcNow;
     await _db.SaveChangesAsync();
+    await InvalidateUserCaches(u.Id);
     return await GetByIdAsync(u.Id);
   }
 
@@ -140,7 +165,27 @@ public class UserService : IUserService
 
     u.LastUpdatedAt = DateTime.UtcNow;
     await _db.SaveChangesAsync();
+    await InvalidateUserCaches(u.Id);
     return await GetByIdAsync(u.Id);
+  }
+
+  private static string BuildUserListCacheKey(int? page, int? pageSize)
+  {
+    if (!page.HasValue || !pageSize.HasValue)
+    {
+      return "users:list:v1";
+    }
+
+    return RedisCacheKeyBuilder.Build(
+      "users:list:v1",
+      ("page", page),
+      ("pageSize", pageSize));
+  }
+
+  private async Task InvalidateUserCaches(Guid userId)
+  {
+    await _redis.RemoveAsync("users:list:v1");
+    await _redis.RemoveAsync(RedisCacheKeyBuilder.Build("users:detail:v1", ("id", userId)));
   }
 }
 
