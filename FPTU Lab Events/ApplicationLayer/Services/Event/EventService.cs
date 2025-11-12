@@ -226,28 +226,42 @@ namespace Application.Services.Event
                 if (roomSlots.Count != request.RoomSlotIds.Count)
                     throw new Exception("Some RoomSlots not found");
 
-                // Check if all slots belong to the same room
+                // Get distinct rooms and labs from the slots
                 var distinctRoomIds = roomSlots.Select(rs => rs.RoomId).Distinct().ToList();
-                if (distinctRoomIds.Count > 1)
-                    throw new Exception("All RoomSlots must belong to the same Room");
+                var distinctLabIds = roomSlots.Select(rs => rs.Room.LabId).Distinct().Where(labId => labId.HasValue).ToList();
 
-                // Get the room from the first slot
-                var slotRoom = roomSlots.First().Room;
+                // If LabId is provided, validate that ALL slots belong to rooms in that Lab
+                if (request.LabId.HasValue)
+                {
+                    var invalidSlots = roomSlots.Where(rs => rs.Room.LabId != request.LabId.Value).ToList();
+                    if (invalidSlots.Any())
+                    {
+                        var roomNames = string.Join(", ", invalidSlots.Select(rs => rs.Room.Name).Distinct());
+                        throw new Exception($"Some RoomSlots belong to rooms not in the specified Lab. Rooms: {roomNames}");
+                    }
+                }
+                else
+                {
+                    // If no LabId provided but slots are from multiple labs, require LabId
+                    if (distinctLabIds.Count > 1)
+                        throw new Exception("RoomSlots belong to multiple Labs. Please specify a LabId.");
+                    
+                    // If all slots from same lab but no rooms assigned to lab yet
+                    if (distinctLabIds.Count == 0)
+                    {
+                        var unassignedRooms = roomSlots.Where(rs => !rs.Room.LabId.HasValue).Select(rs => rs.Room.Name).Distinct();
+                        throw new Exception($"Some rooms are not assigned to any Lab: {string.Join(", ", unassignedRooms)}");
+                    }
+                }
 
-                // If RoomId is provided, validate it matches the slots' room
-                if (request.RoomId.HasValue && !distinctRoomIds.Contains(request.RoomId.Value))
-                    throw new Exception("RoomSlots do not belong to the specified Room");
-
-                // If LabId is provided, validate that the slots' room belongs to that Lab
-                if (request.LabId.HasValue && slotRoom.LabId != request.LabId.Value)
-                    throw new Exception($"RoomSlots belong to a Room that does not belong to the specified Lab");
-
-                // Check if any slot already has an event
+                // Check if any slot already has an event (already booked)
                 var slotsWithEvents = roomSlots.Where(rs => rs.EventId.HasValue).ToList();
                 if (slotsWithEvents.Any())
                 {
-                    var slotInfo = slotsWithEvents.First();
-                    throw new Exception($"RoomSlot (Date: {slotInfo.Date:dd/MM/yyyy}, Slot: {slotInfo.SlotNumber}) is already assigned to another event");
+                    var bookedSlotInfo = slotsWithEvents
+                        .Select(rs => $"{rs.Room.Name} - {rs.Date:dd/MM/yyyy} Slot {rs.SlotNumber}")
+                        .ToList();
+                    throw new Exception($"Following RoomSlots are already booked: {string.Join(", ", bookedSlotInfo)}");
                 }
             }
 
