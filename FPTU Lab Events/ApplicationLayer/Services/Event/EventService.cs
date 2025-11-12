@@ -151,7 +151,7 @@ namespace Application.Services.Event
             };
         }
 
-        public async Task<EventDetail> CreateEventAsync(CreateEventRequest request, Guid adminId)
+        public async Task<EventDetail> CreateEventAsync(CreateEventRequest request, Guid userId, string userRole)
         {
             // Validation - AC-02: Required fields cannot be null
             if (string.IsNullOrWhiteSpace(request.Title))
@@ -236,6 +236,11 @@ namespace Application.Services.Event
                 }
             }
 
+            // Determine initial status based on user role
+            // Lecturer creates event → Pending (needs Staff approval)
+            // Admin/Staff creates event → Active (auto-approved)
+            var initialStatus = userRole == "Lecturer" ? EventStatus.Pending : EventStatus.Active;
+            
             var eventEntity = new DomainLayer.Entities.Event
             {
                 Id = Guid.NewGuid(),
@@ -243,11 +248,11 @@ namespace Application.Services.Event
                 Description = request.Description,
                 StartDate = request.StartDate,
                 EndDate = request.EndDate,
-                Status = request.Status,
+                Status = initialStatus,
                 Visibility = request.Visibility,
                 Capacity = request.Capacity,
                 ImageUrl = request.ImageUrl,
-                CreatedBy = adminId,
+                CreatedBy = userId,
                 CreatedAt = DateTime.UtcNow,
                 LastUpdatedAt = DateTime.UtcNow
             };
@@ -282,12 +287,22 @@ namespace Application.Services.Event
                 throw new Exception($"Failed to save event: {ex.InnerException?.Message ?? ex.Message}");
             }
 
-            // AC-04: Send notification to all users (temporarily disabled for debugging)
-            // await SendEventNotificationAsync(eventEntity.Id, "New Event Created", 
-            //     $"A new event '{eventEntity.Title}' has been created.");
+            // Send notification based on status
+            if (initialStatus == EventStatus.Pending)
+            {
+                // Notify Staff that new event needs approval
+                Console.WriteLine($"[NOTIFICATION] New event '{eventEntity.Title}' is pending approval by Staff");
+            }
+            else
+            {
+                // Notify all users about new active event
+                await SendEventNotificationAsync(eventEntity.Id, "New Event Created", 
+                    $"A new event '{eventEntity.Title}' has been created and is now active.");
+            }
 
-            // Log creation event - AC-06 (temporarily disabled for debugging)
-            // await LogEventActionAsync(adminId, eventEntity.Id, eventEntity.Title, "Create", null);
+            // Log creation event
+            await LogEventActionAsync(userId, eventEntity.Id, eventEntity.Title, "Create", 
+                $"Status: {initialStatus}, Role: {userRole}");
 
             return await GetEventByIdAsync(eventEntity.Id);
         }
@@ -488,6 +503,110 @@ namespace Application.Services.Event
             }).ToList();
         }
 
+        public async Task<EventDetail> ApproveEventAsync(Guid eventId, Guid staffId, string? approvalNote = null)
+        {
+            var eventEntity = await _db.Events
+                .Include(e => e.CreatedByUser)
+                .FirstOrDefaultAsync(e => e.Id == eventId)
+                ?? throw new Exception("Event not found");
+
+            // Check if event is in Pending status
+            if (eventEntity.Status != EventStatus.Pending)
+                throw new Exception($"Cannot approve event. Current status is {eventEntity.Status}. Only Pending events can be approved.");
+
+            // Update status to Active
+            eventEntity.Status = EventStatus.Active;
+            eventEntity.LastUpdatedAt = DateTime.UtcNow;
+
+            _db.Events.Update(eventEntity);
+            await _db.SaveChangesAsync();
+
+            // Send notification to event creator (in background, don't block)
+            try
+            {
+                await SendEventNotificationAsync(eventEntity.Id, "Event Approved", 
+                    $"Your event '{eventEntity.Title}' has been approved by Staff and is now active." + 
+                    (approvalNote != null ? $" Note: {approvalNote}" : ""));
+            }
+            catch (Exception ex)
+            {
+                // Log error but don't fail the approval
+                Console.WriteLine($"[WARNING] Failed to send notification: {ex.Message}");
+            }
+
+            // Log approval
+            await LogEventActionAsync(staffId, eventEntity.Id, eventEntity.Title, "Approve", 
+                $"Event approved. Note: {approvalNote ?? "N/A"}");
+
+            return await GetEventByIdAsync(eventEntity.Id);
+        }
+
+        public async Task<EventDetail> RejectEventAsync(Guid eventId, Guid staffId, string rejectionReason)
+        {
+            if (string.IsNullOrWhiteSpace(rejectionReason))
+                throw new Exception("Rejection reason is required");
+
+            var eventEntity = await _db.Events
+                .Include(e => e.CreatedByUser)
+                .FirstOrDefaultAsync(e => e.Id == eventId)
+                ?? throw new Exception("Event not found");
+
+            // Check if event is in Pending status
+            if (eventEntity.Status != EventStatus.Pending)
+                throw new Exception($"Cannot reject event. Current status is {eventEntity.Status}. Only Pending events can be rejected.");
+
+            // Update status to Rejected
+            eventEntity.Status = EventStatus.Rejected;
+            eventEntity.LastUpdatedAt = DateTime.UtcNow;
+
+            _db.Events.Update(eventEntity);
+            await _db.SaveChangesAsync();
+
+            // Send notification to event creator (in background, don't block)
+            try
+            {
+                await SendEventNotificationAsync(eventEntity.Id, "Event Rejected", 
+                    $"Your event '{eventEntity.Title}' has been rejected by Staff. Reason: {rejectionReason}");
+            }
+            catch (Exception ex)
+            {
+                // Log error but don't fail the rejection
+                Console.WriteLine($"[WARNING] Failed to send notification: {ex.Message}");
+            }
+
+            // Log rejection
+            await LogEventActionAsync(staffId, eventEntity.Id, eventEntity.Title, "Reject", 
+                $"Event rejected. Reason: {rejectionReason}");
+
+            return await GetEventByIdAsync(eventEntity.Id);
+        }
+
+        public async Task<IReadOnlyList<EventListItem>> GetPendingEventsAsync()
+        {
+            var events = await _db.Events
+                .Include(e => e.CreatedByUser)
+                .Include(e => e.Bookings)
+                .Where(e => e.Status == EventStatus.Pending)
+                .OrderBy(e => e.CreatedAt)
+                .ToListAsync();
+
+            return events.Select(e => new EventListItem
+            {
+                Id = e.Id,
+                Title = e.Title,
+                Description = e.Description,
+                StartDate = e.StartDate,
+                EndDate = e.EndDate,
+                Status = e.Status.ToString(),
+                Visibility = e.Visibility,
+                CreatedBy = e.CreatedByUser.Fullname,
+                BookingCount = e.Bookings.Count,
+                IsUpcoming = e.StartDate > DateTime.UtcNow,
+                Capacity = e.Capacity,
+                ImageUrl = e.ImageUrl
+            }).ToList();
+        }
+
         public async Task<int> GetEventCountAsync()
         {
             return await _db.Events.CountAsync();
@@ -499,30 +618,24 @@ namespace Application.Services.Event
                 .CountAsync(e => e.Status == EventStatus.Active);
         }
 
+        public async Task<int> GetPendingEventCountAsync()
+        {
+            return await _db.Events
+                .CountAsync(e => e.Status == EventStatus.Pending);
+        }
+
         private async Task SendEventNotificationAsync(Guid eventId, string title, string content)
         {
-            // Get all active users
-            var users = await _db.Users
-                .Where(u => u.status == UserStatus.Active)
-                .ToListAsync();
-
-            // Create notification for each user
-            var notifications = users.Select(user => new DomainLayer.Entities.Notification
-            {
-                Id = Guid.NewGuid(),
-                Title = title,
-                Content = content,
-                TargetGroup = "All",
-                StartDate = DateTime.UtcNow,
-                EndDate = DateTime.UtcNow.AddDays(30), // Show for 30 days
-                Status = NotificationStatus.Active,
-                CreatedBy = Guid.Empty, // System notification
-                CreatedAt = DateTime.UtcNow,
-                LastUpdatedAt = DateTime.UtcNow
-            }).ToList();
-
-            _db.Notifications.AddRange(notifications);
-            await _db.SaveChangesAsync();
+            // Temporarily disabled - will implement proper notification system later
+            // This prevents database errors when CreatedBy foreign key constraint fails
+            Console.WriteLine($"[NOTIFICATION] {title}: {content}");
+            
+            // TODO: Implement proper notification system
+            // Option 1: Create a system user with fixed GUID for system notifications
+            // Option 2: Make CreatedBy nullable in Notification entity
+            // Option 3: Use a separate notification service
+            
+            await Task.CompletedTask;
         }
 
         private async Task LogEventActionAsync(Guid adminId, Guid eventId, string eventTitle, string action, string? changes)
