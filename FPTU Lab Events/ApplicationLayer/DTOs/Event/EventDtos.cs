@@ -15,7 +15,6 @@ namespace Application.DTOs.Event
         public string CreatedBy { get; set; } = null!;
         public int BookingCount { get; set; }
         public bool IsUpcoming { get; set; }
-        public int Capacity { get; set; }
         public string? ImageUrl { get; set; }
     }
 
@@ -63,7 +62,6 @@ namespace Application.DTOs.Event
         public DateTime EndDate { get; set; }
         public EventStatus Status { get; set; } = EventStatus.Active;
         public bool Visibility { get; set; } = true;
-        public int Capacity { get; set; }
         public string? ImageUrl { get; set; }
         
         // Lab, Room & RoomSlot selection (cascade: Lab -> Room -> RoomSlot)
@@ -80,7 +78,6 @@ namespace Application.DTOs.Event
         public DateTime? EndDate { get; set; }
         public EventStatus? Status { get; set; }
         public bool? Visibility { get; set; }
-        public int? Capacity { get; set; }
         public string? ImageUrl { get; set; }
     }
 
